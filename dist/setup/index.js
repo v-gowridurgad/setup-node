@@ -98369,7 +98369,7 @@ function isCacheFeatureAvailable() {
 
 
 
-const cache_restore_restoreCache = async (packageManager, cacheDependencyPath) => {
+const cache_restore_restoreCache = async (packageManager, cacheDependencyPath, cacheInvalidateAfterDays) => {
     const packageManagerInfo = await getPackageManagerInfo(packageManager);
     if (!packageManagerInfo) {
         throw new Error(`Caching for '${packageManager}' is not supported`);
@@ -98385,8 +98385,16 @@ const cache_restore_restoreCache = async (packageManager, cacheDependencyPath) =
     if (!fileHash) {
         throw new Error('Some specified paths were not resolved, unable to cache dependencies.');
     }
-    const keyPrefix = `node-cache-${platform}-${arch}-${packageManager}`;
+    const numericCacheInvalidateAfterDays = cacheInvalidateAfterDays && cacheInvalidateAfterDays === '0'
+        ? 0
+        : parseInt(cacheInvalidateAfterDays || '', 10) || 120;
+    const timedInvalidationPrefix = numericCacheInvalidateAfterDays
+        ? Math.floor(Date.now() / (1000 * 60 * 60 * 24 * numericCacheInvalidateAfterDays)) % 1000 // % 1000 to get a rolling prefix between 0 and 999 rather than a possibly infinitely large
+        : 0;
+    const keyPrefixBase = `node-cache-${platform}-${arch}-${packageManager}`;
+    const keyPrefix = `${keyPrefixBase}-${timedInvalidationPrefix}`;
     const primaryKey = `${keyPrefix}-${fileHash}`;
+    const restoreKeys = [`${keyPrefix}-`];
     core_debug(`primary key is ${primaryKey}`);
     saveState(State.CachePrimaryKey, primaryKey);
     setOutput('cache-primary-key', primaryKey);
@@ -98394,16 +98402,18 @@ const cache_restore_restoreCache = async (packageManager, cacheDependencyPath) =
     let cacheKey;
     if (isManagedByYarnBerry) {
         core_info('All dependencies are managed locally by yarn3, the previous cache can be used');
-        cacheKey = await restoreCache(cachePaths, primaryKey, [keyPrefix]);
+        cacheKey = await restoreCache(cachePaths, primaryKey, [
+            keyPrefixBase
+        ]);
     }
     else {
-        cacheKey = await restoreCache(cachePaths, primaryKey);
+        cacheKey = await restoreCache(cachePaths, primaryKey, restoreKeys);
     }
     setOutput('cache-hit', Boolean(cacheKey));
     setOutput('cache-matched-key', cacheKey);
     core_debug(`cache-matched-key is ${cacheKey}`);
     if (!cacheKey) {
-        core_info(`${packageManager} cache is not found`);
+        core_info(`Cache not found for input keys: ${[primaryKey, ...restoreKeys].join(', ')}`);
         return;
     }
     saveState(State.CacheMatchedKey, cacheKey);
@@ -99856,11 +99866,12 @@ async function run() {
             configAuthentication(registryUrl);
         }
         const cacheDependencyPath = getInput('cache-dependency-path');
+        const cacheInvalidateAfterDays = getInput('cache-invalidate-after-days');
         if (isCacheFeatureAvailable()) {
             // if the cache input is provided, use it for caching.
             if (cache) {
                 saveState(State.CachePackageManager, cache);
-                await cache_restore_restoreCache(cache, cacheDependencyPath);
+                await cache_restore_restoreCache(cache, cacheDependencyPath, cacheInvalidateAfterDays);
                 // package manager npm is detected from package.json, enable auto-caching for npm.
             }
             else if (packagemanagercache) {
@@ -99869,7 +99880,7 @@ async function run() {
                     core_info("Detected npm as the package manager from package.json's packageManager field. " +
                         'Auto caching has been enabled for npm. If you want to disable it, set package-manager-cache input to false');
                     saveState(State.CachePackageManager, resolvedPackageManager);
-                    await cache_restore_restoreCache(resolvedPackageManager, cacheDependencyPath);
+                    await cache_restore_restoreCache(resolvedPackageManager, cacheDependencyPath, cacheInvalidateAfterDays);
                 }
             }
         }
