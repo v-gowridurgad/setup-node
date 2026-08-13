@@ -15,6 +15,12 @@ inputs:
     description: 'Optional registry to set up for auth. Will set the registry in a project level .npmrc and .yarnrc file, and set up auth to read in from env.NODE_AUTH_TOKEN.'
   scope:
     description: 'Optional scope for authenticating against scoped registries. Will fall back to the repository owner when using the GitHub Packages registry (https://npm.pkg.github.com/).'
+  npmrc-lines:
+    description: >
+      Optional multiline string of raw .npmrc lines to append to the generated
+      .npmrc. Use this to configure multiple @scopes/registries or per-registry
+      auth tokens. Tokens should be referenced as ${VAR_NAME} placeholders and
+      supplied via the step''s `env:` map (do not hardcode secrets).
   token:
     description: Used to pull node distributions from node-versions. Since there's a default, this is typically not supplied by the user. When running this action on github.com, the default value is sufficient. When running on GHES, you can pass a personal access token for github.com if you are experiencing rate limiting.
     default: ${{ github.server_url == 'https://github.com' && github.token || '' }}

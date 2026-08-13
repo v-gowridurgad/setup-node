@@ -9,11 +9,43 @@ export function configAuthentication(registryUrl: string) {
     process.env['RUNNER_TEMP'] || process.cwd(),
     '.npmrc'
   );
-  if (!registryUrl.endsWith('/')) {
+  if (registryUrl && !registryUrl.endsWith('/')) {
     registryUrl += '/';
   }
 
-  writeRegistryToFile(registryUrl, npmrc);
+  if (registryUrl) {
+    writeRegistryToFile(registryUrl, npmrc);
+  }
+
+  appendExtraNpmrcLines(npmrc);
+}
+
+function appendExtraNpmrcLines(fileLocation: string) {
+  const extraLines = core.getInput('npmrc-lines');
+  if (!extraLines) {
+    return;
+  }
+
+  const lines = extraLines
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0);
+
+  if (lines.length === 0) {
+    return;
+  }
+
+  core.debug(`Appending ${lines.length} extra line(s) to ${fileLocation}`);
+
+  const existing = fs.existsSync(fileLocation)
+    ? fs.readFileSync(fileLocation, 'utf8')
+    : '';
+  const separator = existing.length && !existing.endsWith(os.EOL) ? os.EOL : '';
+  fs.writeFileSync(
+    fileLocation,
+    existing + separator + lines.join(os.EOL) + os.EOL
+  );
+  core.exportVariable('NPM_CONFIG_USERCONFIG', fileLocation);
 }
 
 function writeRegistryToFile(registryUrl: string, fileLocation: string) {

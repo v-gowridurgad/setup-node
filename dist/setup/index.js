@@ -47651,10 +47651,33 @@ function getOctokit(token, options, ...additionalPlugins) {
 
 function configAuthentication(registryUrl) {
     const npmrc = external_path_.resolve(process.env['RUNNER_TEMP'] || process.cwd(), '.npmrc');
-    if (!registryUrl.endsWith('/')) {
+    if (registryUrl && !registryUrl.endsWith('/')) {
         registryUrl += '/';
     }
-    writeRegistryToFile(registryUrl, npmrc);
+    if (registryUrl) {
+        writeRegistryToFile(registryUrl, npmrc);
+    }
+    appendExtraNpmrcLines(npmrc);
+}
+function appendExtraNpmrcLines(fileLocation) {
+    const extraLines = getInput('npmrc-lines');
+    if (!extraLines) {
+        return;
+    }
+    const lines = extraLines
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+    if (lines.length === 0) {
+        return;
+    }
+    core_debug(`Appending ${lines.length} extra line(s) to ${fileLocation}`);
+    const existing = external_fs_namespaceObject.existsSync(fileLocation)
+        ? external_fs_namespaceObject.readFileSync(fileLocation, 'utf8')
+        : '';
+    const separator = existing.length && !existing.endsWith(external_os_.EOL) ? external_os_.EOL : '';
+    external_fs_namespaceObject.writeFileSync(fileLocation, existing + separator + lines.join(external_os_.EOL) + external_os_.EOL);
+    exportVariable('NPM_CONFIG_USERCONFIG', fileLocation);
 }
 function writeRegistryToFile(registryUrl, fileLocation) {
     let scope = getInput('scope');
@@ -99952,7 +99975,8 @@ async function run() {
         }
         await printEnvDetailsAndSetOutput();
         const registryUrl = getInput('registry-url');
-        if (registryUrl) {
+        const npmrcLines = getInput('npmrc-lines');
+        if (registryUrl || npmrcLines) {
             configAuthentication(registryUrl);
         }
         const cacheDependencyPath = getInput('cache-dependency-path');
