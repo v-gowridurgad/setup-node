@@ -102,6 +102,13 @@ See [action.yml](action.yml)
     # Default: ''
     scope: ''
 
+    # Optional multiline string of raw .npmrc lines to append to the generated .npmrc.
+    # Use this to configure multiple @scopes/registries or per-registry auth tokens.
+    # Tokens should be referenced as ${VAR_NAME} placeholders and supplied via the
+    # step's `env:` map (do not hardcode secrets).
+    # Default: ''
+    npmrc-lines: ''
+
     # Optional mirror to download binaries from.
     # Artifacts need to match the official Node.js
     # Example:
