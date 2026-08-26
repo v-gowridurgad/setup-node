@@ -508,6 +508,71 @@ To access private GitHub Packages within the same organization, go to "Manage Ac
 
 Please refer to the [Ensuring workflow access to your package - Configuring a package's access control and visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility#ensuring-workflow-access-to-your-package) for more details.
 
+## Multiple registries and publishing to multiple scopes
+
+Some workflows need to install from — or publish to — several npm registries and scopes from the same job. `setup-node` supports this via a single input:
+
+- **`npm-registries`** — a multiline list of `[@scope=]registry[::token]` entries.
+  - Each entry becomes canonical `.npmrc` lines (`@scope:registry=…` + `//host/:_authToken=${VAR}`) used for install **and** publish auth.
+  - The **first scoped entry** is also the **publish target**: `./package.json`'s `name` is rewritten to use that scope, so `npm publish` routes to the matching registry regardless of the scope currently in `package.json`.
+
+### Install from multiple registries
+
+```yaml
+- uses: actions/setup-node@v5
+  with:
+    node-version: '20'
+    npm-registries: |
+      @my-org=https://npm.pkg.github.com/::${GH_TOKEN}
+      @acme=https://acme.jfrog.io/artifactory/api/npm/npm/::${ACME_TOKEN}
+      https://registry.npmjs.org/::${NPMJS_TOKEN}
+  env:
+    GH_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+    ACME_TOKEN:  ${{ secrets.ACME_TOKEN }}
+    NPMJS_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+- run: npm ci
+  env:
+    GH_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+    ACME_TOKEN:  ${{ secrets.ACME_TOKEN }}
+    NPMJS_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
+
+### Publish one source tree to multiple scopes/registries (matrix)
+
+`npm publish` always uses the `name` in `package.json` to pick a registry. To publish the same source to several scopes, use a matrix and put the target scope **first** in `npm-registries` for each leg — `setup-node` rewrites the `name` field automatically:
+
+```yaml
+jobs:
+  publish:
+    strategy:
+      matrix:
+        include:
+          - target: '@my-org=https://npm.pkg.github.com/::${GH_TOKEN}'
+          - target: '@acme=https://acme.jfrog.io/artifactory/api/npm/npm/::${ACME_TOKEN}'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          npm-registries: |
+            ${{ matrix.target }}
+            @my-org=https://npm.pkg.github.com/::${GH_TOKEN}
+            @acme=https://acme.jfrog.io/artifactory/api/npm/npm/::${ACME_TOKEN}
+        env:
+          GH_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          ACME_TOKEN: ${{ secrets.ACME_TOKEN }}
+      - run: npm publish
+        env:
+          GH_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          ACME_TOKEN: ${{ secrets.ACME_TOKEN }}
+```
+
+**How it works.** If `package.json` starts as `"name": "@foo/my-lib"` and the matrix leg lists `@acme=…` first, `setup-node` rewrites the file on disk to `"name": "@acme/my-lib"` before `npm publish` runs. The `@acme:registry=…` line already in `.npmrc` then routes the publish to the correct registry with the correct token.
+
+> **Note.** This mutates the checked-out `package.json`. Don't commit the change back; each matrix leg starts from a clean checkout.
+
 ## Publishing to npm with Trusted Publisher (OIDC)
 
 npm supports Trusted Publishers, enabling packages to be published from GitHub Actions using OpenID Connect (OIDC) instead of long-lived npm tokens. This improves security by replacing static credentials with short-lived tokens, reducing the risk of credential leakage and simplifying authentication in CI/CD workflows.

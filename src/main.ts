@@ -63,7 +63,8 @@ export async function run() {
     await printEnvDetailsAndSetOutput();
 
     const registryUrl: string = core.getInput('registry-url');
-    if (registryUrl) {
+    const npmRegistries: string = core.getInput('npm-registries');
+    if (registryUrl || npmRegistries) {
       auth.configAuthentication(registryUrl);
     }
 
