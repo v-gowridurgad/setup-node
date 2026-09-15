@@ -220,6 +220,72 @@ describe('main tests', () => {
 
       expect(util.getNodeVersionFromFile('file')).toBe(expected);
     });
+
+    it('throws a descriptive error on a self-referential volta.extends cycle', () => {
+      const selfPath = path.resolve('/tmp/self-cycle/package.json');
+
+      const existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+      const readFileSpy = jest
+        .spyOn(fs, 'readFileSync')
+        .mockImplementation(
+          () => '{"volta": {"extends": "./package.json"}}' as any
+        );
+
+      expect(() => util.getNodeVersionFromFile(selfPath)).toThrow(
+        /Detected cyclic volta\.extends chain/
+      );
+
+      existsSpy.mockRestore();
+      readFileSpy.mockRestore();
+    });
+
+    it('throws a descriptive error on a mutual volta.extends cycle (a -> b -> a)', () => {
+      const aPath = path.resolve('/tmp/mutual-cycle/a.json');
+      const bPath = path.resolve('/tmp/mutual-cycle/b.json');
+
+      const existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+      const readFileSpy = jest
+        .spyOn(fs, 'readFileSync')
+        .mockImplementation((filePath: any) => {
+          if (
+            typeof filePath === 'string' &&
+            path.resolve(filePath) === aPath
+          ) {
+            return '{"volta": {"extends": "./b.json"}}' as any;
+          }
+          return '{"volta": {"extends": "./a.json"}}' as any;
+        });
+
+      expect(() => util.getNodeVersionFromFile(aPath)).toThrow(
+        /Detected cyclic volta\.extends chain/
+      );
+
+      existsSpy.mockRestore();
+      readFileSpy.mockRestore();
+    });
+
+    it('follows a valid acyclic volta.extends chain (a -> b) to resolve the node version', () => {
+      const aPath = path.resolve('/tmp/acyclic/a.json');
+      const bPath = path.resolve('/tmp/acyclic/b.json');
+
+      const existsSpy = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+      const readFileSpy = jest
+        .spyOn(fs, 'readFileSync')
+        .mockImplementation((filePath: any) => {
+          if (
+            typeof filePath === 'string' &&
+            path.resolve(filePath) === aPath
+          ) {
+            return '{"volta": {"extends": "./b.json"}}' as any;
+          }
+          return '{"volta": {"node": "20.10.0"}}' as any;
+        });
+
+      expect(util.getNodeVersionFromFile(aPath)).toBe('20.10.0');
+
+      existsSpy.mockRestore();
+      readFileSpy.mockRestore();
+    });
   });
 
   describe('printEnvDetailsAndSetOutput', () => {

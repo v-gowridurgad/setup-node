@@ -99495,9 +99495,20 @@ function stringify(obj, { maxDepth = 1000, numbersAsFloat = false } = {}) {
 
 
 function getNodeVersionFromFile(versionFilePath) {
+    return getNodeVersionFromFileInternal(versionFilePath, new Set());
+}
+function getNodeVersionFromFileInternal(versionFilePath, visited) {
     if (!external_fs_default().existsSync(versionFilePath)) {
         throw new Error(`The specified node version file at: ${versionFilePath} does not exist`);
     }
+    // Guard against cyclic `volta.extends` chains (self- or mutually-referential),
+    // which would otherwise recurse until the JS engine throws a stack overflow.
+    const absolutePath = external_path_default().resolve(versionFilePath);
+    if (visited.has(absolutePath)) {
+        const chain = [...visited, absolutePath].join(' -> ');
+        throw new Error(`Detected cyclic volta.extends chain in node-version-file resolution: ${chain}`);
+    }
+    visited.add(absolutePath);
     const contents = external_fs_default().readFileSync(versionFilePath, 'utf8');
     // Try parsing the file as an NPM `package.json` file.
     try {
@@ -99528,7 +99539,7 @@ function getNodeVersionFromFile(versionFilePath) {
             if (manifest.volta?.extends) {
                 const extendedFilePath = external_path_default().resolve(external_path_default().dirname(versionFilePath), manifest.volta.extends);
                 core_info('Resolving node version from ' + extendedFilePath);
-                return getNodeVersionFromFile(extendedFilePath);
+                return getNodeVersionFromFileInternal(extendedFilePath, visited);
             }
             // If contents are an object, we parsed JSON
             // this can happen if node-version-file is a package.json

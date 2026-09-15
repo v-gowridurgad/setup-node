@@ -7,11 +7,29 @@ import fs from 'fs';
 import path from 'path';
 
 export function getNodeVersionFromFile(versionFilePath: string): string | null {
+  return getNodeVersionFromFileInternal(versionFilePath, new Set<string>());
+}
+
+function getNodeVersionFromFileInternal(
+  versionFilePath: string,
+  visited: Set<string>
+): string | null {
   if (!fs.existsSync(versionFilePath)) {
     throw new Error(
       `The specified node version file at: ${versionFilePath} does not exist`
     );
   }
+
+  // Guard against cyclic `volta.extends` chains (self- or mutually-referential),
+  // which would otherwise recurse until the JS engine throws a stack overflow.
+  const absolutePath = path.resolve(versionFilePath);
+  if (visited.has(absolutePath)) {
+    const chain = [...visited, absolutePath].join(' -> ');
+    throw new Error(
+      `Detected cyclic volta.extends chain in node-version-file resolution: ${chain}`
+    );
+  }
+  visited.add(absolutePath);
 
   const contents = fs.readFileSync(versionFilePath, 'utf8');
 
@@ -51,7 +69,7 @@ export function getNodeVersionFromFile(versionFilePath: string): string | null {
           manifest.volta.extends
         );
         core.info('Resolving node version from ' + extendedFilePath);
-        return getNodeVersionFromFile(extendedFilePath);
+        return getNodeVersionFromFileInternal(extendedFilePath, visited);
       }
 
       // If contents are an object, we parsed JSON
