@@ -94109,12 +94109,21 @@ function getNodeVersionFromFileInternal(versionFilePath, visited) {
     }
     // Guard against cyclic `volta.extends` chains (self- or mutually-referential),
     // which would otherwise recurse until the JS engine throws a stack overflow.
-    const absolutePath = path.resolve(versionFilePath);
-    if (visited.has(absolutePath)) {
-        const chain = [...visited, absolutePath].join(' -> ');
+    // Use `fs.realpathSync` so a symlinked loop (different lexical paths pointing
+    // at the same real file) is also detected. Fall back to `path.resolve` if
+    // realpath fails for any reason (e.g. mocked filesystems in tests).
+    let resolvedPath;
+    try {
+        resolvedPath = fs.realpathSync(versionFilePath);
+    }
+    catch {
+        resolvedPath = path.resolve(versionFilePath);
+    }
+    if (visited.has(resolvedPath)) {
+        const chain = [...visited, resolvedPath].join(' -> ');
         throw new Error(`Detected cyclic volta.extends chain in node-version-file resolution: ${chain}`);
     }
-    visited.add(absolutePath);
+    visited.add(resolvedPath);
     const contents = fs.readFileSync(versionFilePath, 'utf8');
     // Try parsing the file as an NPM `package.json` file.
     try {
