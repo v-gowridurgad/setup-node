@@ -99553,7 +99553,13 @@ function getNodeVersionFromFileInternal(versionFilePath, visited) {
             return null;
         }
     }
-    catch {
+    catch (err) {
+        // A cyclic volta.extends error is a real, actionable failure — don't let
+        // the JSON-parse fallback silently swallow it and fall through to TOML/regex.
+        if (err instanceof Error &&
+            err.message.startsWith('Detected cyclic volta.extends chain in node-version-file resolution:')) {
+            throw err;
+        }
         core_info('Node version file is not JSON file');
     }
     // Try parsing the file as a mise `mise.toml` file.
