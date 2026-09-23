@@ -76,6 +76,11 @@ function getNodeVersionFromFileInternal(
           path.dirname(versionFilePath),
           manifest.volta.extends
         );
+        if (!fs.existsSync(extendedFilePath)) {
+          throw new Error(
+            `The volta.extends target at: ${extendedFilePath} does not exist (referenced from ${versionFilePath})`
+          );
+        }
         core.info('Resolving node version from ' + extendedFilePath);
         return getNodeVersionFromFileInternal(extendedFilePath, visited);
       }
@@ -99,6 +104,15 @@ function getNodeVersionFromFileInternal(
       err.message.startsWith(
         'Detected cyclic volta.extends chain in node-version-file resolution:'
       )
+    ) {
+      throw err;
+    }
+    // Same for a missing volta.extends target: swallowing it here makes the
+    // plain-text fallback report the version as "{" instead of naming the
+    // file that could not be found.
+    if (
+      err instanceof Error &&
+      err.message.startsWith('The volta.extends target at:')
     ) {
       throw err;
     }
