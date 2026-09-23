@@ -7,11 +7,37 @@ import fs from 'fs';
 import path from 'path';
 
 export function getNodeVersionFromFile(versionFilePath: string): string | null {
+  return getNodeVersionFromFileInternal(versionFilePath, new Set<string>());
+}
+
+function getNodeVersionFromFileInternal(
+  versionFilePath: string,
+  visited: Set<string>
+): string | null {
   if (!fs.existsSync(versionFilePath)) {
     throw new Error(
       `The specified node version file at: ${versionFilePath} does not exist`
     );
   }
+
+  // Guard against cyclic `volta.extends` chains (self- or mutually-referential),
+  // which would otherwise recurse until the JS engine throws a stack overflow.
+  // Use `fs.realpathSync` so a symlinked loop (different lexical paths pointing
+  // at the same real file) is also detected. Fall back to `path.resolve` if
+  // realpath fails for any reason (e.g. mocked filesystems in tests).
+  let resolvedPath: string;
+  try {
+    resolvedPath = fs.realpathSync(versionFilePath);
+  } catch {
+    resolvedPath = path.resolve(versionFilePath);
+  }
+  if (visited.has(resolvedPath)) {
+    const chain = [...visited, resolvedPath].join(' -> ');
+    throw new Error(
+      `Detected cyclic volta.extends chain in node-version-file resolution: ${chain}`
+    );
+  }
+  visited.add(resolvedPath);
 
   const contents = fs.readFileSync(versionFilePath, 'utf8');
 
@@ -50,8 +76,13 @@ export function getNodeVersionFromFile(versionFilePath: string): string | null {
           path.dirname(versionFilePath),
           manifest.volta.extends
         );
+        if (!fs.existsSync(extendedFilePath)) {
+          throw new Error(
+            `The volta.extends target at: ${extendedFilePath} does not exist (referenced from ${versionFilePath})`
+          );
+        }
         core.info('Resolving node version from ' + extendedFilePath);
-        return getNodeVersionFromFile(extendedFilePath);
+        return getNodeVersionFromFileInternal(extendedFilePath, visited);
       }
 
       // If contents are an object, we parsed JSON
@@ -65,7 +96,26 @@ export function getNodeVersionFromFile(versionFilePath: string): string | null {
       // *are* JSON, so no further string parsing makes sense.
       return null;
     }
-  } catch {
+  } catch (err) {
+    // A cyclic volta.extends error is a real, actionable failure — don't let
+    // the JSON-parse fallback silently swallow it and fall through to TOML/regex.
+    if (
+      err instanceof Error &&
+      err.message.startsWith(
+        'Detected cyclic volta.extends chain in node-version-file resolution:'
+      )
+    ) {
+      throw err;
+    }
+    // Same for a missing volta.extends target: swallowing it here makes the
+    // plain-text fallback report the version as "{" instead of naming the
+    // file that could not be found.
+    if (
+      err instanceof Error &&
+      err.message.startsWith('The volta.extends target at:')
+    ) {
+      throw err;
+    }
     core.info('Node version file is not JSON file');
   }
 
