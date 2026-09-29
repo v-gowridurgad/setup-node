@@ -102,6 +102,16 @@ See [action.yml](action.yml)
     # Default: ''
     scope: ''
 
+    # Optional multiline mapping of scopes, registries and tokens for authenticating
+    # against multiple npm registries. Each line has the form:
+    #   [@scope=]registry[::token]
+    # Use ${VAR_NAME} placeholders for tokens and provide them via the step `env:` block.
+    # The FIRST scoped line is also treated as the publish target: ./package.json's
+    # "name" is rewritten to use that scope so `npm publish` routes to the matching
+    # registry, regardless of the scope in package.json.
+    # Default: ''
+    npm-registries: ''
+
     # Optional mirror to download binaries from.
     # Artifacts need to match the official Node.js
     # Example:
