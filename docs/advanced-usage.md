@@ -481,6 +481,32 @@ steps:
 # `npm rebuild` will run all those post-install scripts for us.
 - run: npm rebuild && npm run prepare --if-present
 ```
+
+## Configure multiple registries / scopes (`npmrc-lines`)
+
+When you need to authenticate against several registries (for example npmjs, GitHub Packages, and a private Artifactory) or use different scopes with different tokens, use the `npmrc-lines` input to append raw `.npmrc` lines to the generated file.
+
+Reference tokens as `${VAR_NAME}` placeholders and supply them through the step's `env:` map — do not hardcode secrets in the workflow.
+
+```yaml
+steps:
+- uses: actions/checkout@v7
+- uses: actions/setup-node@v7
+  with:
+    node-version: '24.x'
+    npmrc-lines: |
+      @myorg:registry=https://npm.pkg.github.com/
+      //npm.pkg.github.com/:_authToken=${GH_PKG_TOKEN}
+      @acme:registry=https://acme.jfrog.io/artifactory/api/npm/npm/
+      //acme.jfrog.io/artifactory/api/npm/npm/:_authToken=${ACME_TOKEN}
+- run: npm ci
+  env:
+    GH_PKG_TOKEN: ${{ secrets.GH_PKG_TOKEN }}
+    ACME_TOKEN: ${{ secrets.ACME_TOKEN }}
+```
+
+`npmrc-lines` can also be combined with `registry-url` — the single default registry is configured via the existing input, and extras are appended from `npmrc-lines`.
+
 ### Yarn2 configuration
 Yarn2 ignores both .npmrc and .yarnrc files created by the action, so before installing dependencies from the private repo it is necessary either to create or to modify existing yarnrc.yml file with `yarn config set` commands.
 

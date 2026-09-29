@@ -63,7 +63,8 @@ export async function run() {
     await printEnvDetailsAndSetOutput();
 
     const registryUrl: string = core.getInput('registry-url');
-    if (registryUrl) {
+    const npmrcLines: string = core.getInput('npmrc-lines');
+    if (registryUrl || npmrcLines) {
       auth.configAuthentication(registryUrl);
     }
 
