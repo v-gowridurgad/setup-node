@@ -99494,10 +99494,54 @@ function stringify(obj, { maxDepth = 1000, numbersAsFloat = false } = {}) {
 
 
 
-function getNodeVersionFromFile(versionFilePath) {
+/**
+ * Raised when a `volta.extends` chain is cyclic.
+ *
+ * Modelled as a dedicated type (rather than matched on its message text) so
+ * the JSON-parse fallback below can rethrow it without the check silently
+ * breaking if the message is ever reworded.
+ */
+class VoltaExtendsError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'VoltaExtendsError';
+    }
+}
+/**
+ * Upper bound on how many `volta.extends` hops are followed.
+ *
+ * The `visited` set already bounds genuine cycles, but a depth cap also
+ * protects against a pathological-but-acyclic chain recursing deeply enough
+ * to overflow the stack, and against loops that the lexical `path.resolve`
+ * comparison cannot see (e.g. two symlinks pointing at the same real file).
+ */
+const MAX_VOLTA_EXTENDS_DEPTH = 100;
+/**
+ * Records `versionFilePath` as visited and throws if it has already been seen
+ * or if the chain has grown too long.
+ *
+ * Guards against cyclic `volta.extends` chains (self- or mutually-referential),
+ * which would otherwise recurse until the JS engine throws a stack overflow.
+ * Paths are compared after `path.resolve` so that different spellings of the
+ * same path collapse to one entry; no filesystem call is made, which keeps the
+ * common case (a single `package.json` with no `extends`) free of extra I/O.
+ */
+function markVisitedOrThrowOnCycle(versionFilePath, visited) {
+    const resolvedPath = external_path_default().resolve(versionFilePath);
+    if (visited.has(resolvedPath)) {
+        const chain = [...visited, resolvedPath].join(' -> ');
+        throw new VoltaExtendsError(`Detected cyclic volta.extends chain in node-version-file resolution: ${chain}`);
+    }
+    if (visited.size >= MAX_VOLTA_EXTENDS_DEPTH) {
+        throw new VoltaExtendsError(`Exceeded the maximum of ${MAX_VOLTA_EXTENDS_DEPTH} volta.extends hops while resolving the node version file starting at ${[...visited][0]}`);
+    }
+    visited.add(resolvedPath);
+}
+function getNodeVersionFromFile(versionFilePath, visited = new Set()) {
     if (!external_fs_default().existsSync(versionFilePath)) {
         throw new Error(`The specified node version file at: ${versionFilePath} does not exist`);
     }
+    markVisitedOrThrowOnCycle(versionFilePath, visited);
     const contents = external_fs_default().readFileSync(versionFilePath, 'utf8');
     // Try parsing the file as an NPM `package.json` file.
     try {
@@ -99528,7 +99572,7 @@ function getNodeVersionFromFile(versionFilePath) {
             if (manifest.volta?.extends) {
                 const extendedFilePath = external_path_default().resolve(external_path_default().dirname(versionFilePath), manifest.volta.extends);
                 core_info('Resolving node version from ' + extendedFilePath);
-                return getNodeVersionFromFile(extendedFilePath);
+                return getNodeVersionFromFile(extendedFilePath, visited);
             }
             // If contents are an object, we parsed JSON
             // this can happen if node-version-file is a package.json
@@ -99542,7 +99586,13 @@ function getNodeVersionFromFile(versionFilePath) {
             return null;
         }
     }
-    catch {
+    catch (err) {
+        // A cyclic volta.extends chain is a real, actionable failure. Don't let
+        // the JSON-parse fallback silently swallow it and fall through to the
+        // TOML/plain-text parsing, which would otherwise report the version as "{".
+        if (err instanceof VoltaExtendsError) {
+            throw err;
+        }
         core_info('Node version file is not JSON file');
     }
     // Try parsing the file as a mise `mise.toml` file.
