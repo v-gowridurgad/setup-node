@@ -225,66 +225,60 @@ describe('main tests', () => {
       expect(util.getNodeVersionFromFile('file')).toBe(expected);
     });
 
-    it('throws a descriptive error on a self-referential volta.extends cycle', () => {
-      const existsSpy = jest.spyOn(fs, 'existsSync');
-      existsSpy.mockImplementation(() => true);
-
-      const readFileSpy = jest.spyOn(fs, 'readFileSync');
-      readFileSpy.mockImplementation(
-        () => '{"volta": {"extends": "./package.json"}}' as any
+    // Backs `fs` with an in-memory file map so volta.extends chains can be
+    // walked without touching disk. Files absent from the map do not exist.
+    const mockFiles = (files: Record<string, string>) => {
+      const resolved = new Map(
+        Object.entries(files).map(([file, contents]) => [
+          path.resolve(file),
+          contents
+        ])
       );
 
-      expect(() =>
-        realUtil.getNodeVersionFromFile('/tmp/self/package.json')
-      ).toThrow(/Detected cyclic volta\.extends chain/);
-    });
+      jest
+        .spyOn(fs, 'existsSync')
+        .mockImplementation((file: any) =>
+          resolved.has(path.resolve(String(file)))
+        );
+      jest
+        .spyOn(fs, 'readFileSync')
+        .mockImplementation(
+          (file: any) => resolved.get(path.resolve(String(file))) as any
+        );
+    };
 
-    it('throws a descriptive error on a mutual volta.extends cycle (a -> b -> a)', () => {
-      const aPath = path.resolve('/tmp/mutual/a.json');
+    it.each([
+      [
+        'self-referential',
+        {'/tmp/a/package.json': '{"volta": {"extends": "./package.json"}}'},
+        '/tmp/a/package.json'
+      ],
+      [
+        'mutual (a -> b -> a)',
+        {
+          '/tmp/b/a.json': '{"volta": {"extends": "./b.json"}}',
+          '/tmp/b/b.json': '{"volta": {"extends": "./a.json"}}'
+        },
+        '/tmp/b/a.json'
+      ]
+    ])(
+      'throws a descriptive error on a %s volta.extends cycle',
+      (_name, files, entry) => {
+        mockFiles(files);
 
-      const existsSpy = jest.spyOn(fs, 'existsSync');
-      existsSpy.mockImplementation(() => true);
+        expect(() => realUtil.getNodeVersionFromFile(entry)).toThrow(
+          /Detected cyclic volta\.extends chain/
+        );
+      }
+    );
 
-      const readFileSpy = jest.spyOn(fs, 'readFileSync');
-      readFileSpy.mockImplementation((filePath: any) => {
-        if (typeof filePath === 'string' && path.resolve(filePath) === aPath) {
-          return '{"volta": {"extends": "./b.json"}}' as any;
-        }
-        return '{"volta": {"extends": "./a.json"}}' as any;
-      });
-
-      expect(() => realUtil.getNodeVersionFromFile(aPath)).toThrow(
-        /Detected cyclic volta\.extends chain/
-      );
-    });
-
-    it('follows a valid acyclic volta.extends chain (a -> b) to resolve the node version', () => {
-      const aPath = path.resolve('/tmp/acyclic/a.json');
-
-      const existsSpy = jest.spyOn(fs, 'existsSync');
-      existsSpy.mockImplementation(() => true);
-
-      const readFileSpy = jest.spyOn(fs, 'readFileSync');
-      readFileSpy.mockImplementation((filePath: any) => {
-        if (typeof filePath === 'string' && path.resolve(filePath) === aPath) {
-          return '{"volta": {"extends": "./b.json"}}' as any;
-        }
-        return '{"volta": {"node": "20.10.0"}}' as any;
-      });
-
-      expect(realUtil.getNodeVersionFromFile(aPath)).toBe('20.10.0');
-    });
-
-    it('throws once a volta.extends chain exceeds the maximum depth', () => {
-      const existsSpy = jest.spyOn(fs, 'existsSync');
-      existsSpy.mockImplementation(() => true);
-
+    it('throws once a volta.extends chain exceeds the maximum number of hops', () => {
       // Every file extends a distinct next file, so the chain is acyclic and
-      // only the depth cap can stop the recursion.
-      const readFileSpy = jest.spyOn(fs, 'readFileSync');
-      readFileSpy.mockImplementation((filePath: any) => {
+      // only the hop cap can stop the recursion.
+      jest.spyOn(fs, 'existsSync').mockImplementation(() => true);
+      jest.spyOn(fs, 'readFileSync').mockImplementation((file: any) => {
         const index = Number(
-          path.basename(String(filePath), '.json').replace('a', '')
+          path.basename(String(file), '.json').replace('a', '')
         );
         return `{"volta": {"extends": "./a${index + 1}.json"}}` as any;
       });
@@ -292,6 +286,20 @@ describe('main tests', () => {
       expect(() =>
         realUtil.getNodeVersionFromFile(path.resolve('/tmp/deep/a0.json'))
       ).toThrow(/Exceeded the maximum of \d+ volta\.extends hops/);
+    });
+
+    it('surfaces a missing volta.extends target instead of falling back to text parsing', () => {
+      // Without this, the "does not exist" error is swallowed by the JSON
+      // fallback and the parent's raw contents get reported as the version.
+      mockFiles({
+        '/tmp/c/package.json': '{"volta": {"extends": "./missing.json"}}'
+      });
+
+      expect(() =>
+        realUtil.getNodeVersionFromFile('/tmp/c/package.json')
+      ).toThrow(
+        /The specified node version file at: .*missing\.json does not exist/
+      );
     });
   });
 
