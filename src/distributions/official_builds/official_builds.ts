@@ -23,14 +23,34 @@ export default class OfficialBuilds extends BaseDistribution {
     if (this.isLtsAlias(this.nodeInfo.versionSpec)) {
       core.info('Attempt to resolve LTS alias from manifest...');
 
-      // No try-catch since it's not possible to resolve LTS alias without manifest
-      manifest = await this.getManifest();
+      try {
+        manifest = await this.getManifest();
 
-      this.nodeInfo.versionSpec = this.resolveLtsAliasFromManifest(
-        this.nodeInfo.versionSpec,
-        this.nodeInfo.stable,
-        manifest
-      );
+        this.nodeInfo.versionSpec = this.resolveLtsAliasFromManifest(
+          this.nodeInfo.versionSpec,
+          this.nodeInfo.stable,
+          manifest
+        );
+      } catch (err) {
+        // The manifest lives on github.com, which is not reachable from every
+        // runner. `index.json` carries the same LTS codenames, so fall back to
+        // the configured dist source (the mirror, when one is set).
+        core.info((err as Error).message);
+        core.info(
+          `Attempt to resolve LTS alias from ${this.nodeInfo.mirror || 'Node'}...`
+        );
+
+        nodeJsVersions = await this.getNodeJsVersions();
+        this.nodeInfo.versionSpec = this.resolveLtsAliasFromManifest(
+          this.nodeInfo.versionSpec,
+          this.nodeInfo.stable,
+          nodeJsVersions.map(v => ({
+            version: v.version.replace(/^v/, ''),
+            lts: v.lts || undefined,
+            stable: this.nodeInfo.stable
+          })) as INodeRelease[]
+        );
+      }
     }
 
     if (this.isLatestSyntax(this.nodeInfo.versionSpec)) {
