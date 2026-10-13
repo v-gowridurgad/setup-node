@@ -1104,8 +1104,9 @@ describe('setup-node', () => {
 
       await main.run();
 
-      // Three attempts per manifest fetch, then the LTS alias is resolved from
-      // dist instead of failing the run.
+      // Three attempts while resolving the alias, then three more from the
+      // download path, which retries the manifest before falling back to dist.
+      expect(getManifestSpy).toHaveBeenCalledTimes(6);
       expect(logSpy).toHaveBeenCalledWith('Retrying to fetch the manifest...');
       expect(logSpy).toHaveBeenCalledWith(
         'Attempt to resolve LTS alias from Node...'

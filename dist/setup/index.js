@@ -99006,13 +99006,15 @@ class OfficialBuilds extends BaseDistribution {
                 // The manifest lives on github.com, which is not reachable from every
                 // runner. `index.json` carries the same LTS codenames, so fall back to
                 // the configured dist source (the mirror, when one is set).
-                core_info(err.message);
+                core_info(String(err));
                 core_info(`Attempt to resolve LTS alias from ${this.nodeInfo.mirror || 'Node'}...`);
                 nodeJsVersions = await this.getNodeJsVersions();
                 this.nodeInfo.versionSpec = this.resolveLtsAliasFromManifest(this.nodeInfo.versionSpec, this.nodeInfo.stable, nodeJsVersions.map(v => ({
                     version: v.version.replace(/^v/, ''),
                     lts: v.lts || undefined,
-                    stable: this.nodeInfo.stable
+                    // Everything in the dist index is a stable release; nightly, rc
+                    // and v8-canary builds are published under separate endpoints.
+                    stable: true
                 })));
             }
         }
@@ -99145,7 +99147,10 @@ class OfficialBuilds extends BaseDistribution {
         }
         throw new Error(`Failed to fetch a valid manifest after ${maxAttempts} attempts. Last error: ${lastError?.message}`);
     }
-    resolveLtsAliasFromManifest(versionSpec, stable, manifest) {
+    resolveLtsAliasFromManifest(versionSpec, stable, 
+    // Only the fields used below are required, so this also accepts entries
+    // derived from the dist index, which carries no release_url or files.
+    manifest) {
         const alias = versionSpec.split('lts/')[1]?.toLowerCase();
         if (!alias) {
             throw new Error(`Unable to parse LTS alias for Node version '${versionSpec}'`);

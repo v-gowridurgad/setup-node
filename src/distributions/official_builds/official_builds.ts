@@ -35,7 +35,7 @@ export default class OfficialBuilds extends BaseDistribution {
         // The manifest lives on github.com, which is not reachable from every
         // runner. `index.json` carries the same LTS codenames, so fall back to
         // the configured dist source (the mirror, when one is set).
-        core.info((err as Error).message);
+        core.info(String(err));
         core.info(
           `Attempt to resolve LTS alias from ${this.nodeInfo.mirror || 'Node'}...`
         );
@@ -47,8 +47,10 @@ export default class OfficialBuilds extends BaseDistribution {
           nodeJsVersions.map(v => ({
             version: v.version.replace(/^v/, ''),
             lts: v.lts || undefined,
-            stable: this.nodeInfo.stable
-          })) as INodeRelease[]
+            // Everything in the dist index is a stable release; nightly, rc
+            // and v8-canary builds are published under separate endpoints.
+            stable: true
+          }))
         );
       }
     }
@@ -251,7 +253,9 @@ export default class OfficialBuilds extends BaseDistribution {
   private resolveLtsAliasFromManifest(
     versionSpec: string,
     stable: boolean,
-    manifest: INodeRelease[]
+    // Only the fields used below are required, so this also accepts entries
+    // derived from the dist index, which carries no release_url or files.
+    manifest: Pick<INodeRelease, 'version' | 'lts' | 'stable'>[]
   ): string {
     const alias = versionSpec.split('lts/')[1]?.toLowerCase();
 
