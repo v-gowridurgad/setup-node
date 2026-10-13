@@ -98998,9 +98998,25 @@ class OfficialBuilds extends BaseDistribution {
         const osArch = this.translateArchToDistUrl(this.nodeInfo.arch);
         if (this.isLtsAlias(this.nodeInfo.versionSpec)) {
             core_info('Attempt to resolve LTS alias from manifest...');
-            // No try-catch since it's not possible to resolve LTS alias without manifest
-            manifest = await this.getManifest();
-            this.nodeInfo.versionSpec = this.resolveLtsAliasFromManifest(this.nodeInfo.versionSpec, this.nodeInfo.stable, manifest);
+            try {
+                manifest = await this.getManifest();
+                this.nodeInfo.versionSpec = this.resolveLtsAliasFromManifest(this.nodeInfo.versionSpec, this.nodeInfo.stable, manifest);
+            }
+            catch (err) {
+                // The manifest lives on github.com, which is not reachable from every
+                // runner. `index.json` carries the same LTS codenames, so fall back to
+                // the configured dist source (the mirror, when one is set).
+                core_info(String(err));
+                core_info(`Attempt to resolve LTS alias from ${this.nodeInfo.mirror || 'Node'}...`);
+                nodeJsVersions = await this.getNodeJsVersions();
+                this.nodeInfo.versionSpec = this.resolveLtsAliasFromManifest(this.nodeInfo.versionSpec, this.nodeInfo.stable, nodeJsVersions.map(v => ({
+                    version: v.version.replace(/^v/, ''),
+                    lts: v.lts || undefined,
+                    // Everything in the dist index is a stable release; nightly, rc
+                    // and v8-canary builds are published under separate endpoints.
+                    stable: true
+                })));
+            }
         }
         if (this.isLatestSyntax(this.nodeInfo.versionSpec)) {
             nodeJsVersions = await this.getNodeJsVersions();
@@ -99131,7 +99147,10 @@ class OfficialBuilds extends BaseDistribution {
         }
         throw new Error(`Failed to fetch a valid manifest after ${maxAttempts} attempts. Last error: ${lastError?.message}`);
     }
-    resolveLtsAliasFromManifest(versionSpec, stable, manifest) {
+    resolveLtsAliasFromManifest(versionSpec, stable, 
+    // Only the fields used below are required, so this also accepts entries
+    // derived from the dist index, which carries no release_url or files.
+    manifest) {
         const alias = versionSpec.split('lts/')[1]?.toLowerCase();
         if (!alias) {
             throw new Error(`Unable to parse LTS alias for Node version '${versionSpec}'`);

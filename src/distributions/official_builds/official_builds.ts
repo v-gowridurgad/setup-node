@@ -23,14 +23,36 @@ export default class OfficialBuilds extends BaseDistribution {
     if (this.isLtsAlias(this.nodeInfo.versionSpec)) {
       core.info('Attempt to resolve LTS alias from manifest...');
 
-      // No try-catch since it's not possible to resolve LTS alias without manifest
-      manifest = await this.getManifest();
+      try {
+        manifest = await this.getManifest();
 
-      this.nodeInfo.versionSpec = this.resolveLtsAliasFromManifest(
-        this.nodeInfo.versionSpec,
-        this.nodeInfo.stable,
-        manifest
-      );
+        this.nodeInfo.versionSpec = this.resolveLtsAliasFromManifest(
+          this.nodeInfo.versionSpec,
+          this.nodeInfo.stable,
+          manifest
+        );
+      } catch (err) {
+        // The manifest lives on github.com, which is not reachable from every
+        // runner. `index.json` carries the same LTS codenames, so fall back to
+        // the configured dist source (the mirror, when one is set).
+        core.info(String(err));
+        core.info(
+          `Attempt to resolve LTS alias from ${this.nodeInfo.mirror || 'Node'}...`
+        );
+
+        nodeJsVersions = await this.getNodeJsVersions();
+        this.nodeInfo.versionSpec = this.resolveLtsAliasFromManifest(
+          this.nodeInfo.versionSpec,
+          this.nodeInfo.stable,
+          nodeJsVersions.map(v => ({
+            version: v.version.replace(/^v/, ''),
+            lts: v.lts || undefined,
+            // Everything in the dist index is a stable release; nightly, rc
+            // and v8-canary builds are published under separate endpoints.
+            stable: true
+          }))
+        );
+      }
     }
 
     if (this.isLatestSyntax(this.nodeInfo.versionSpec)) {
@@ -231,7 +253,9 @@ export default class OfficialBuilds extends BaseDistribution {
   private resolveLtsAliasFromManifest(
     versionSpec: string,
     stable: boolean,
-    manifest: INodeRelease[]
+    // Only the fields used below are required, so this also accepts entries
+    // derived from the dist index, which carries no release_url or files.
+    manifest: Pick<INodeRelease, 'version' | 'lts' | 'stable'>[]
   ): string {
     const alias = versionSpec.split('lts/')[1]?.toLowerCase();
 

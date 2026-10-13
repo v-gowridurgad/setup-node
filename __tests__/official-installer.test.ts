@@ -918,7 +918,7 @@ describe('setup-node', () => {
       );
     });
 
-    it('fail if manifest is not available', async () => {
+    it('falls back to dist when the manifest is not available', async () => {
       // arrange
       inputs['node-version'] = 'lts/erbium';
 
@@ -928,6 +928,16 @@ describe('setup-node', () => {
         throw new Error('Unable to download manifest');
       });
 
+      dlSpy.mockImplementation(async () => '/some/temp/path');
+      const toolPath = path.normalize('/cache/node/12.16.3/x64');
+      exSpy.mockImplementation(async () => '/some/other/temp/path');
+      cacheSpy.mockImplementation(async () => toolPath);
+      getExecOutputSpy.mockImplementation(async () => ({
+        stdout: 'v12.16.3\n',
+        stderr: '',
+        exitCode: 0
+      }));
+
       // act
       await main.run();
 
@@ -935,12 +945,14 @@ describe('setup-node', () => {
       expect(logSpy).toHaveBeenCalledWith(
         'Attempt to resolve LTS alias from manifest...'
       );
+      expect(logSpy).toHaveBeenCalledWith(
+        'Attempt to resolve LTS alias from Node...'
+      );
+      // `index.json` carries the same LTS codenames, so erbium still resolves.
       expect(dbgSpy).toHaveBeenCalledWith(
-        'Getting manifest from actions/node-versions@main'
+        `Found LTS release '12.16.3' for Node version 'lts/erbium'`
       );
-      expect(setFailedSpy).toHaveBeenCalledWith(
-        `Failed to fetch a valid manifest after 3 attempts. Last error: Unable to download manifest`
-      );
+      expect(setFailedSpy).not.toHaveBeenCalled();
     }, 10000);
   });
 
@@ -1080,12 +1092,26 @@ describe('setup-node', () => {
     it('rejects an empty manifest as invalid and retries', async () => {
       getManifestSpy.mockImplementation(() => []);
 
+      dlSpy.mockImplementation(async () => '/some/temp/path');
+      const toolPath = path.normalize('/cache/node/12.16.3/x64');
+      exSpy.mockImplementation(async () => '/some/other/temp/path');
+      cacheSpy.mockImplementation(async () => toolPath);
+      getExecOutputSpy.mockImplementation(async () => ({
+        stdout: 'v12.16.3\n',
+        stderr: '',
+        exitCode: 0
+      }));
+
       await main.run();
 
-      expect(getManifestSpy).toHaveBeenCalledTimes(3);
-      expect(setFailedSpy).toHaveBeenCalledWith(
-        `Failed to fetch a valid manifest after 3 attempts. Last error: The manifest fetched is empty, truncated, or does not contain any valid tool release entries.`
+      // Three attempts while resolving the alias, then three more from the
+      // download path, which retries the manifest before falling back to dist.
+      expect(getManifestSpy).toHaveBeenCalledTimes(6);
+      expect(logSpy).toHaveBeenCalledWith('Retrying to fetch the manifest...');
+      expect(logSpy).toHaveBeenCalledWith(
+        'Attempt to resolve LTS alias from Node...'
       );
+      expect(setFailedSpy).not.toHaveBeenCalled();
     }, 10000);
   });
 

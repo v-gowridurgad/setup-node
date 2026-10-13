@@ -18,4 +18,5 @@ export interface INodeVersionInfo {
 export interface INodeVersion {
   version: string;
   files: string[];
+  lts?: string | false;
 }
