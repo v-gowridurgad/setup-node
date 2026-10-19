@@ -6,7 +6,45 @@ import {parse} from 'smol-toml';
 import fs from 'fs';
 import path from 'path';
 
+interface NodeVersionFileResolutionContext {
+  enforceVoltaExtendsWorkspaceBoundary: boolean;
+  workspace?: string;
+}
+
+class VoltaExtendsBoundaryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'VoltaExtendsBoundaryError';
+  }
+}
+
+function isPathWithinWorkspace(filePath: string, workspace: string): boolean {
+  const resolvedWorkspace = path.resolve(workspace);
+  const resolvedFile = path.resolve(filePath);
+  const relativePath = path.relative(resolvedWorkspace, resolvedFile);
+
+  return (
+    relativePath !== '..' &&
+    !relativePath.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativePath)
+  );
+}
+
 export function getNodeVersionFromFile(versionFilePath: string): string | null {
+  const workspace = process.env.GITHUB_WORKSPACE;
+  const enforceVoltaExtendsWorkspaceBoundary =
+    !!workspace && isPathWithinWorkspace(versionFilePath, workspace);
+
+  return getNodeVersionFromFileInternal(versionFilePath, {
+    enforceVoltaExtendsWorkspaceBoundary,
+    workspace
+  });
+}
+
+function getNodeVersionFromFileInternal(
+  versionFilePath: string,
+  context: NodeVersionFileResolutionContext
+): string | null {
   if (!fs.existsSync(versionFilePath)) {
     throw new Error(
       `The specified node version file at: ${versionFilePath} does not exist`
@@ -50,8 +88,19 @@ export function getNodeVersionFromFile(versionFilePath: string): string | null {
           path.dirname(versionFilePath),
           manifest.volta.extends
         );
+
+        if (
+          context.enforceVoltaExtendsWorkspaceBoundary &&
+          context.workspace &&
+          !isPathWithinWorkspace(extendedFilePath, context.workspace)
+        ) {
+          throw new VoltaExtendsBoundaryError(
+            `The volta.extends target '${manifest.volta.extends}' resolves outside GITHUB_WORKSPACE and is not allowed`
+          );
+        }
+
         core.info('Resolving node version from ' + extendedFilePath);
-        return getNodeVersionFromFile(extendedFilePath);
+        return getNodeVersionFromFileInternal(extendedFilePath, context);
       }
 
       // If contents are an object, we parsed JSON
@@ -65,7 +114,10 @@ export function getNodeVersionFromFile(versionFilePath: string): string | null {
       // *are* JSON, so no further string parsing makes sense.
       return null;
     }
-  } catch {
+  } catch (err) {
+    if (err instanceof VoltaExtendsBoundaryError) {
+      throw err;
+    }
     core.info('Node version file is not JSON file');
   }
 

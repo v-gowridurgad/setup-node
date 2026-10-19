@@ -224,6 +224,52 @@ describe('main tests', () => {
 
       expect(util.getNodeVersionFromFile('file')).toBe(expected);
     });
+
+    it('rejects volta.extends paths outside workspace when the chain starts inside workspace', () => {
+      const existsSpy = jest.spyOn(fs, 'existsSync');
+      existsSpy.mockImplementation(() => true);
+
+      const readFileSpy = jest.spyOn(fs, 'readFileSync');
+      readFileSpy.mockImplementation((filePath: any) => {
+        if (
+          typeof filePath === 'string' &&
+          path.basename(filePath) === 'a.json'
+        ) {
+          return '{"volta": {"extends": "/etc/passwd"}}' as any;
+        }
+
+        return 'v20.0.0' as any;
+      });
+
+      process.env['GITHUB_WORKSPACE'] = '/tmp/workspace';
+
+      expect(() =>
+        util.getNodeVersionFromFile('/tmp/workspace/a.json')
+      ).toThrow(/resolves outside GITHUB_WORKSPACE/);
+    });
+
+    it('allows outside volta.extends paths when the chain starts outside workspace', () => {
+      const existsSpy = jest.spyOn(fs, 'existsSync');
+      existsSpy.mockImplementation(() => true);
+
+      const readFileSpy = jest.spyOn(fs, 'readFileSync');
+      readFileSpy.mockImplementation((filePath: any) => {
+        if (
+          typeof filePath === 'string' &&
+          path.basename(filePath) === 'a.json'
+        ) {
+          return '{"volta": {"extends": "/tmp/external/.nvmrc"}}' as any;
+        }
+
+        return 'v20.0.0' as any;
+      });
+
+      process.env['GITHUB_WORKSPACE'] = '/tmp/workspace';
+
+      expect(util.getNodeVersionFromFile('/tmp/external/a.json')).toBe(
+        '20.0.0'
+      );
+    });
   });
 
   describe('printEnvDetailsAndSetOutput', () => {
