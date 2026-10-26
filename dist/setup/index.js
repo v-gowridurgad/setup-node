@@ -97507,15 +97507,46 @@ function isPathWithinWorkspace(filePath, workspace) {
     const resolvedWorkspace = external_path_default().resolve(workspace);
     const resolvedFile = external_path_default().resolve(filePath);
     const relativePath = external_path_default().relative(resolvedWorkspace, resolvedFile);
-    return (relativePath !== '..' &&
+    const insideByText = relativePath !== '..' &&
         !relativePath.startsWith(`..${(external_path_default()).sep}`) &&
-        !external_path_default().isAbsolute(relativePath));
+        !external_path_default().isAbsolute(relativePath);
+    if (!insideByText) {
+        return false;
+    }
+    // If the path does not exist yet, treat textual containment as sufficient and
+    // let the normal missing-file error be raised by the caller.
+    if (!external_fs_default().existsSync(resolvedFile)) {
+        return true;
+    }
+    // Defend against symlink escapes (workspace-relative path that points
+    // outside the workspace when dereferenced).
+    const realWorkspace = external_fs_default().realpathSync(resolvedWorkspace);
+    const realFile = external_fs_default().realpathSync(resolvedFile);
+    const relativeRealPath = external_path_default().relative(realWorkspace, realFile);
+    return (relativeRealPath !== '..' &&
+        !relativeRealPath.startsWith(`..${(external_path_default()).sep}`) &&
+        !external_path_default().isAbsolute(relativeRealPath));
 }
 function getNodeVersionFromFile(versionFilePath) {
     const workspace = process.env.GITHUB_WORKSPACE;
-    const enforceVoltaExtendsWorkspaceBoundary = !!workspace && isPathWithinWorkspace(versionFilePath, workspace);
+    const startsInsideWorkspaceByText = !!workspace &&
+        (() => {
+            const resolvedWorkspace = external_path_default().resolve(workspace);
+            const resolvedFile = external_path_default().resolve(versionFilePath);
+            const relativePath = external_path_default().relative(resolvedWorkspace, resolvedFile);
+            return (relativePath !== '..' &&
+                !relativePath.startsWith(`..${(external_path_default()).sep}`) &&
+                !external_path_default().isAbsolute(relativePath));
+        })();
+    // If the caller points at what appears to be an in-workspace version file,
+    // ensure it does not escape through a symlink.
+    if (startsInsideWorkspaceByText &&
+        workspace &&
+        !isPathWithinWorkspace(versionFilePath, workspace)) {
+        throw new VoltaExtendsBoundaryError(`The node-version-file '${versionFilePath}' resolves outside GITHUB_WORKSPACE and is not allowed`);
+    }
     return getNodeVersionFromFileInternal(versionFilePath, {
-        enforceVoltaExtendsWorkspaceBoundary,
+        enforceVoltaExtendsWorkspaceBoundary: startsInsideWorkspaceByText,
         workspace
     });
 }
