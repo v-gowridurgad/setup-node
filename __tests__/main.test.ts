@@ -304,31 +304,29 @@ describe('main tests', () => {
 
     it('rejects volta.extends paths outside workspace when the chain starts inside workspace', () => {
       const previousWorkspace = process.env['GITHUB_WORKSPACE'];
+      const workspace = path.resolve('/tmp/workspace');
       const existsSpy = jest.spyOn(fs, 'existsSync');
       existsSpy.mockImplementation(() => true);
 
       const realpathSpy = jest.spyOn(fs, 'realpathSync');
       realpathSpy.mockImplementation(
-        (filePath: any) => String(filePath) as any
+        (filePath: any) => path.resolve(String(filePath)) as any
       );
 
       const readFileSpy = jest.spyOn(fs, 'readFileSync');
       readFileSpy.mockImplementation((filePath: any) => {
-        if (
-          typeof filePath === 'string' &&
-          path.basename(filePath) === 'a.json'
-        ) {
+        if (path.basename(String(filePath)) === 'a.json') {
           return '{"volta": {"extends": "/etc/passwd"}}' as any;
         }
 
         return 'v20.0.0' as any;
       });
 
-      process.env['GITHUB_WORKSPACE'] = '/tmp/workspace';
+      process.env['GITHUB_WORKSPACE'] = workspace;
 
       try {
         expect(() =>
-          util.getNodeVersionFromFile('/tmp/workspace/a.json')
+          util.getNodeVersionFromFile(path.join(workspace, 'a.json'))
         ).toThrow(/resolves outside GITHUB_WORKSPACE/);
       } finally {
         process.env['GITHUB_WORKSPACE'] = previousWorkspace;
@@ -337,32 +335,33 @@ describe('main tests', () => {
 
     it('allows outside volta.extends paths when the chain starts outside workspace', () => {
       const previousWorkspace = process.env['GITHUB_WORKSPACE'];
+      const workspace = path.resolve('/tmp/workspace');
+      const outsideDir = path.resolve('/tmp/external');
       const existsSpy = jest.spyOn(fs, 'existsSync');
       existsSpy.mockImplementation(() => true);
 
       const realpathSpy = jest.spyOn(fs, 'realpathSync');
       realpathSpy.mockImplementation(
-        (filePath: any) => String(filePath) as any
+        (filePath: any) => path.resolve(String(filePath)) as any
       );
 
       const readFileSpy = jest.spyOn(fs, 'readFileSync');
       readFileSpy.mockImplementation((filePath: any) => {
-        if (
-          typeof filePath === 'string' &&
-          path.basename(filePath) === 'a.json'
-        ) {
-          return '{"volta": {"extends": "/tmp/external/.nvmrc"}}' as any;
+        if (path.basename(String(filePath)) === 'a.json') {
+          return JSON.stringify({
+            volta: {extends: path.join(outsideDir, '.nvmrc')}
+          }) as any;
         }
 
         return 'v20.0.0' as any;
       });
 
-      process.env['GITHUB_WORKSPACE'] = '/tmp/workspace';
+      process.env['GITHUB_WORKSPACE'] = workspace;
 
       try {
-        expect(util.getNodeVersionFromFile('/tmp/external/a.json')).toBe(
-          '20.0.0'
-        );
+        expect(
+          util.getNodeVersionFromFile(path.join(outsideDir, 'a.json'))
+        ).toBe('20.0.0');
       } finally {
         process.env['GITHUB_WORKSPACE'] = previousWorkspace;
       }
@@ -370,13 +369,14 @@ describe('main tests', () => {
 
     it('rejects volta.extends symlink escapes outside workspace', () => {
       const previousWorkspace = process.env['GITHUB_WORKSPACE'];
-      const workspace = '/tmp/workspace';
-      const startFile = '/tmp/workspace/a.json';
-      const symlinkFile = '/tmp/workspace/leak';
+      const workspace = path.resolve('/tmp/workspace');
+      const startFile = path.join(workspace, 'a.json');
+      const symlinkFile = path.join(workspace, 'leak');
+      const symlinkTarget = path.resolve('/proc/self/environ');
 
       const existsSpy = jest.spyOn(fs, 'existsSync');
       existsSpy.mockImplementation((filePath: any) => {
-        const resolved = String(filePath);
+        const resolved = path.resolve(String(filePath));
         return (
           resolved === startFile ||
           resolved === symlinkFile ||
@@ -386,22 +386,16 @@ describe('main tests', () => {
 
       const realpathSpy = jest.spyOn(fs, 'realpathSync');
       realpathSpy.mockImplementation((filePath: any) => {
-        const resolved = String(filePath);
-        if (resolved === workspace) {
-          return workspace as any;
-        }
-        if (resolved === startFile) {
-          return startFile as any;
-        }
+        const resolved = path.resolve(String(filePath));
         if (resolved === symlinkFile) {
-          return '/proc/self/environ' as any;
+          return symlinkTarget as any;
         }
         return resolved as any;
       });
 
       const readFileSpy = jest.spyOn(fs, 'readFileSync');
       readFileSpy.mockImplementation((filePath: any) => {
-        if (String(filePath) === startFile) {
+        if (path.resolve(String(filePath)) === startFile) {
           return '{"volta": {"extends": "./leak"}}' as any;
         }
         return 'v20.0.0' as any;
