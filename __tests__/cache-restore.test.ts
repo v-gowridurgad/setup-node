@@ -195,7 +195,8 @@ describe('cache-restore', () => {
     ])(
       'restored dependencies for %s',
       async (packageManager, toolVersion, fileHash) => {
-        const expectedCacheKey = `node-cache-${platform}-${arch}-${packageManager}-${fileHash}`;
+        const expectedCacheKey = `node-cache-${platform}-${arch}-${packageManager}-0-${fileHash}`;
+        const expectedRestoreKey = `node-cache-${platform}-${arch}-${packageManager}-0-`;
         setWorkspaceFor(packageManager as PackageManager);
         getExecOutputSpy.mockImplementation(async (command: any) => ({
           stdout: command.includes('version')
@@ -205,13 +206,13 @@ describe('cache-restore', () => {
           exitCode: 0
         }));
 
-        await restoreCache(packageManager, '');
+        await restoreCache(packageManager, '', '0');
         expect(hashFilesSpy).toHaveBeenCalled();
         expect(infoSpy).toHaveBeenCalledWith(
           `Cache restored from key: ${expectedCacheKey}`
         );
         expect(infoSpy).not.toHaveBeenCalledWith(
-          `${packageManager} cache is not found`
+          `Cache not found for input keys: ${expectedCacheKey}, ${expectedRestoreKey}`
         );
         expect(setOutputSpy).toHaveBeenCalledWith('cache-hit', true);
         expect(setOutputSpy).toHaveBeenCalledWith(
@@ -235,7 +236,8 @@ describe('cache-restore', () => {
     ])(
       'dependencies are changed %s',
       async (packageManager, toolVersion, fileHash) => {
-        const expectedCacheKey = `node-cache-${platform}-${arch}-${packageManager}-${fileHash}`;
+        const expectedCacheKey = `node-cache-${platform}-${arch}-${packageManager}-0-${fileHash}`;
+        const expectedRestoreKey = `node-cache-${platform}-${arch}-${packageManager}-0-`;
         setWorkspaceFor(packageManager as PackageManager);
         getExecOutputSpy.mockImplementation(async (command: any) => ({
           stdout: command.includes('version')
@@ -246,10 +248,10 @@ describe('cache-restore', () => {
         }));
 
         restoreCacheSpy.mockImplementationOnce(() => undefined);
-        await restoreCache(packageManager, '');
+        await restoreCache(packageManager, '', '0');
         expect(hashFilesSpy).toHaveBeenCalled();
         expect(infoSpy).toHaveBeenCalledWith(
-          `${packageManager} cache is not found`
+          `Cache not found for input keys: ${expectedCacheKey}, ${expectedRestoreKey}`
         );
         expect(setOutputSpy).toHaveBeenCalledWith('cache-hit', false);
         expect(setOutputSpy).toHaveBeenCalledWith(

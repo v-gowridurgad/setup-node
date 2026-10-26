@@ -68,12 +68,19 @@ export async function run() {
     }
 
     const cacheDependencyPath = core.getInput('cache-dependency-path');
+    const cacheInvalidateAfterDays = core.getInput(
+      'cache-invalidate-after-days'
+    );
 
     if (isCacheFeatureAvailable()) {
       // if the cache input is provided, use it for caching.
       if (cache) {
         core.saveState(State.CachePackageManager, cache);
-        await restoreCache(cache, cacheDependencyPath);
+        await restoreCache(
+          cache,
+          cacheDependencyPath,
+          cacheInvalidateAfterDays
+        );
         // package manager npm is detected from package.json, enable auto-caching for npm.
       } else if (packagemanagercache) {
         const resolvedPackageManager = getNameFromPackageManagerField();
@@ -83,7 +90,11 @@ export async function run() {
               'Auto caching has been enabled for npm. If you want to disable it, set package-manager-cache input to false'
           );
           core.saveState(State.CachePackageManager, resolvedPackageManager);
-          await restoreCache(resolvedPackageManager, cacheDependencyPath);
+          await restoreCache(
+            resolvedPackageManager,
+            cacheDependencyPath,
+            cacheInvalidateAfterDays
+          );
         }
       }
     }
