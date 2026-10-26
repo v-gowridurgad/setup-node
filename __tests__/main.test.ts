@@ -224,6 +224,199 @@ describe('main tests', () => {
 
       expect(util.getNodeVersionFromFile('file')).toBe(expected);
     });
+
+    // Backs `fs` with an in-memory file map so volta.extends chains can be
+    // walked without touching disk. Files absent from the map do not exist.
+    const mockFiles = (files: Record<string, string>) => {
+      const resolved = new Map(
+        Object.entries(files).map(([file, contents]) => [
+          path.resolve(file),
+          contents
+        ])
+      );
+
+      jest
+        .spyOn(fs, 'existsSync')
+        .mockImplementation((file: any) =>
+          resolved.has(path.resolve(String(file)))
+        );
+      jest
+        .spyOn(fs, 'readFileSync')
+        .mockImplementation(
+          (file: any) => resolved.get(path.resolve(String(file))) as any
+        );
+    };
+
+    it.each([
+      [
+        'self-referential',
+        {'/tmp/a/package.json': '{"volta": {"extends": "./package.json"}}'},
+        '/tmp/a/package.json'
+      ],
+      [
+        'mutual (a -> b -> a)',
+        {
+          '/tmp/b/a.json': '{"volta": {"extends": "./b.json"}}',
+          '/tmp/b/b.json': '{"volta": {"extends": "./a.json"}}'
+        },
+        '/tmp/b/a.json'
+      ]
+    ])(
+      'throws a descriptive error on a %s volta.extends cycle',
+      (_name, files, entry) => {
+        mockFiles(files);
+
+        expect(() => realUtil.getNodeVersionFromFile(entry)).toThrow(
+          /Detected cyclic volta\.extends chain/
+        );
+      }
+    );
+
+    it('throws once a volta.extends chain exceeds the maximum number of hops', () => {
+      // Every file extends a distinct next file, so the chain is acyclic and
+      // only the hop cap can stop the recursion.
+      jest.spyOn(fs, 'existsSync').mockImplementation(() => true);
+      jest.spyOn(fs, 'readFileSync').mockImplementation((file: any) => {
+        const index = Number(
+          path.basename(String(file), '.json').replace('a', '')
+        );
+        return `{"volta": {"extends": "./a${index + 1}.json"}}` as any;
+      });
+
+      expect(() =>
+        realUtil.getNodeVersionFromFile(path.resolve('/tmp/deep/a0.json'))
+      ).toThrow(/Exceeded the maximum of \d+ volta\.extends hops/);
+    });
+
+    it('surfaces a missing volta.extends target instead of falling back to text parsing', () => {
+      // Without this, the "does not exist" error is swallowed by the JSON
+      // fallback and the parent's raw contents get reported as the version.
+      mockFiles({
+        '/tmp/c/package.json': '{"volta": {"extends": "./missing.json"}}'
+      });
+
+      expect(() =>
+        realUtil.getNodeVersionFromFile('/tmp/c/package.json')
+      ).toThrow(
+        /The specified node version file at: .*missing\.json does not exist/
+      );
+    });
+
+    it('rejects volta.extends paths outside workspace when the chain starts inside workspace', () => {
+      const previousWorkspace = process.env['GITHUB_WORKSPACE'];
+      const existsSpy = jest.spyOn(fs, 'existsSync');
+      existsSpy.mockImplementation(() => true);
+
+      const realpathSpy = jest.spyOn(fs, 'realpathSync');
+      realpathSpy.mockImplementation(
+        (filePath: any) => String(filePath) as any
+      );
+
+      const readFileSpy = jest.spyOn(fs, 'readFileSync');
+      readFileSpy.mockImplementation((filePath: any) => {
+        if (
+          typeof filePath === 'string' &&
+          path.basename(filePath) === 'a.json'
+        ) {
+          return '{"volta": {"extends": "/etc/passwd"}}' as any;
+        }
+
+        return 'v20.0.0' as any;
+      });
+
+      process.env['GITHUB_WORKSPACE'] = '/tmp/workspace';
+
+      try {
+        expect(() =>
+          util.getNodeVersionFromFile('/tmp/workspace/a.json')
+        ).toThrow(/resolves outside GITHUB_WORKSPACE/);
+      } finally {
+        process.env['GITHUB_WORKSPACE'] = previousWorkspace;
+      }
+    });
+
+    it('allows outside volta.extends paths when the chain starts outside workspace', () => {
+      const previousWorkspace = process.env['GITHUB_WORKSPACE'];
+      const existsSpy = jest.spyOn(fs, 'existsSync');
+      existsSpy.mockImplementation(() => true);
+
+      const realpathSpy = jest.spyOn(fs, 'realpathSync');
+      realpathSpy.mockImplementation(
+        (filePath: any) => String(filePath) as any
+      );
+
+      const readFileSpy = jest.spyOn(fs, 'readFileSync');
+      readFileSpy.mockImplementation((filePath: any) => {
+        if (
+          typeof filePath === 'string' &&
+          path.basename(filePath) === 'a.json'
+        ) {
+          return '{"volta": {"extends": "/tmp/external/.nvmrc"}}' as any;
+        }
+
+        return 'v20.0.0' as any;
+      });
+
+      process.env['GITHUB_WORKSPACE'] = '/tmp/workspace';
+
+      try {
+        expect(util.getNodeVersionFromFile('/tmp/external/a.json')).toBe(
+          '20.0.0'
+        );
+      } finally {
+        process.env['GITHUB_WORKSPACE'] = previousWorkspace;
+      }
+    });
+
+    it('rejects volta.extends symlink escapes outside workspace', () => {
+      const previousWorkspace = process.env['GITHUB_WORKSPACE'];
+      const workspace = '/tmp/workspace';
+      const startFile = '/tmp/workspace/a.json';
+      const symlinkFile = '/tmp/workspace/leak';
+
+      const existsSpy = jest.spyOn(fs, 'existsSync');
+      existsSpy.mockImplementation((filePath: any) => {
+        const resolved = String(filePath);
+        return (
+          resolved === startFile ||
+          resolved === symlinkFile ||
+          resolved === workspace
+        );
+      });
+
+      const realpathSpy = jest.spyOn(fs, 'realpathSync');
+      realpathSpy.mockImplementation((filePath: any) => {
+        const resolved = String(filePath);
+        if (resolved === workspace) {
+          return workspace as any;
+        }
+        if (resolved === startFile) {
+          return startFile as any;
+        }
+        if (resolved === symlinkFile) {
+          return '/proc/self/environ' as any;
+        }
+        return resolved as any;
+      });
+
+      const readFileSpy = jest.spyOn(fs, 'readFileSync');
+      readFileSpy.mockImplementation((filePath: any) => {
+        if (String(filePath) === startFile) {
+          return '{"volta": {"extends": "./leak"}}' as any;
+        }
+        return 'v20.0.0' as any;
+      });
+
+      process.env['GITHUB_WORKSPACE'] = workspace;
+
+      try {
+        expect(() => util.getNodeVersionFromFile(startFile)).toThrow(
+          /resolves outside GITHUB_WORKSPACE/
+        );
+      } finally {
+        process.env['GITHUB_WORKSPACE'] = previousWorkspace;
+      }
+    });
   });
 
   describe('printEnvDetailsAndSetOutput', () => {
