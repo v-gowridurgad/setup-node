@@ -92103,7 +92103,60 @@ function stringify(obj, { maxDepth = 1000, numbersAsFloat = false } = {}) {
 
 
 
+class VoltaExtendsBoundaryError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'VoltaExtendsBoundaryError';
+    }
+}
+function isPathWithinWorkspace(filePath, workspace) {
+    const resolvedWorkspace = path.resolve(workspace);
+    const resolvedFile = path.resolve(filePath);
+    const relativePath = path.relative(resolvedWorkspace, resolvedFile);
+    const insideByText = relativePath !== '..' &&
+        !relativePath.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(relativePath);
+    if (!insideByText) {
+        return false;
+    }
+    // If the path does not exist yet, treat textual containment as sufficient and
+    // let the normal missing-file error be raised by the caller.
+    if (!fs.existsSync(resolvedFile)) {
+        return true;
+    }
+    // Defend against symlink escapes (workspace-relative path that points
+    // outside the workspace when dereferenced).
+    const realWorkspace = fs.realpathSync(resolvedWorkspace);
+    const realFile = fs.realpathSync(resolvedFile);
+    const relativeRealPath = path.relative(realWorkspace, realFile);
+    return (relativeRealPath !== '..' &&
+        !relativeRealPath.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(relativeRealPath));
+}
 function getNodeVersionFromFile(versionFilePath) {
+    const workspace = process.env.GITHUB_WORKSPACE;
+    const startsInsideWorkspaceByText = !!workspace &&
+        (() => {
+            const resolvedWorkspace = path.resolve(workspace);
+            const resolvedFile = path.resolve(versionFilePath);
+            const relativePath = path.relative(resolvedWorkspace, resolvedFile);
+            return (relativePath !== '..' &&
+                !relativePath.startsWith(`..${path.sep}`) &&
+                !path.isAbsolute(relativePath));
+        })();
+    // If the caller points at what appears to be an in-workspace version file,
+    // ensure it does not escape through a symlink.
+    if (startsInsideWorkspaceByText &&
+        workspace &&
+        !isPathWithinWorkspace(versionFilePath, workspace)) {
+        throw new VoltaExtendsBoundaryError(`The node-version-file '${versionFilePath}' resolves outside GITHUB_WORKSPACE and is not allowed`);
+    }
+    return getNodeVersionFromFileInternal(versionFilePath, {
+        enforceVoltaExtendsWorkspaceBoundary: startsInsideWorkspaceByText,
+        workspace
+    });
+}
+function getNodeVersionFromFileInternal(versionFilePath, context) {
     if (!fs.existsSync(versionFilePath)) {
         throw new Error(`The specified node version file at: ${versionFilePath} does not exist`);
     }
@@ -92136,8 +92189,13 @@ function getNodeVersionFromFile(versionFilePath) {
             // See https://docs.volta.sh/advanced/workspaces
             if (manifest.volta?.extends) {
                 const extendedFilePath = path.resolve(path.dirname(versionFilePath), manifest.volta.extends);
+                if (context.enforceVoltaExtendsWorkspaceBoundary &&
+                    context.workspace &&
+                    !isPathWithinWorkspace(extendedFilePath, context.workspace)) {
+                    throw new VoltaExtendsBoundaryError(`The volta.extends target '${manifest.volta.extends}' resolves outside GITHUB_WORKSPACE and is not allowed`);
+                }
                 core.info('Resolving node version from ' + extendedFilePath);
-                return getNodeVersionFromFile(extendedFilePath);
+                return getNodeVersionFromFileInternal(extendedFilePath, context);
             }
             // If contents are an object, we parsed JSON
             // this can happen if node-version-file is a package.json
@@ -92151,7 +92209,10 @@ function getNodeVersionFromFile(versionFilePath) {
             return null;
         }
     }
-    catch {
+    catch (err) {
+        if (err instanceof VoltaExtendsBoundaryError) {
+            throw err;
+        }
         core.info('Node version file is not JSON file');
     }
     // Try parsing the file as a mise `mise.toml` file.
