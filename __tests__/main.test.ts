@@ -302,6 +302,18 @@ describe('main tests', () => {
       );
     });
 
+    it('rejects a non-string volta.extends instead of returning the raw file contents', () => {
+      // Otherwise path.resolve throws a TypeError that is swallowed as "not
+      // JSON", and the fallback returns the whole package.json as a version.
+      mockFiles({
+        '/tmp/d/package.json': '{"volta": {"extends": 42}}'
+      });
+
+      expect(() =>
+        realUtil.getNodeVersionFromFile('/tmp/d/package.json')
+      ).toThrow(/volta\.extends value in .* must be a string, received number/);
+    });
+
     it('rejects volta.extends paths outside workspace when the chain starts inside workspace', () => {
       const previousWorkspace = process.env['GITHUB_WORKSPACE'];
       const workspace = path.resolve('/tmp/workspace');

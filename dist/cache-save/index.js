@@ -92111,10 +92111,10 @@ class VoltaExtendsError extends Error {
     }
 }
 /** Raised when resolution that started inside the workspace escapes it. */
-class VoltaExtendsBoundaryError extends Error {
+class NodeVersionFileBoundaryError extends Error {
     constructor(message) {
         super(message);
-        this.name = 'VoltaExtendsBoundaryError';
+        this.name = 'NodeVersionFileBoundaryError';
     }
 }
 const MAX_VOLTA_EXTENDS_HOPS = 100;
@@ -92157,7 +92157,7 @@ function getNodeVersionFromFile(versionFilePath) {
     if (startsInsideWorkspace &&
         workspace &&
         !isPathWithinWorkspace(versionFilePath, workspace)) {
-        throw new VoltaExtendsBoundaryError(`The node-version-file '${versionFilePath}' resolves outside GITHUB_WORKSPACE and is not allowed`);
+        throw new NodeVersionFileBoundaryError(`The node-version-file '${versionFilePath}' resolves outside GITHUB_WORKSPACE and is not allowed`);
     }
     return resolveNodeVersionFromFile(versionFilePath, new Set(), {
         enforceVoltaExtendsWorkspaceBoundary: startsInsideWorkspace,
@@ -92200,6 +92200,9 @@ function resolveNodeVersionFromFile(versionFilePath, visited, context) {
             // Support Volta workspaces.
             // See https://docs.volta.sh/advanced/workspaces
             if (manifest.volta?.extends) {
+                if (typeof manifest.volta.extends !== 'string') {
+                    throw new VoltaExtendsError(`The volta.extends value in ${versionFilePath} must be a string, received ${typeof manifest.volta.extends}`);
+                }
                 extendedFilePath = path.resolve(path.dirname(versionFilePath), manifest.volta.extends);
             }
             else {
@@ -92217,8 +92220,9 @@ function resolveNodeVersionFromFile(versionFilePath, visited, context) {
         }
     }
     catch (err) {
-        if (err instanceof VoltaExtendsError ||
-            err instanceof VoltaExtendsBoundaryError) {
+        // A malformed volta.extends is a real configuration error, not a signal
+        // that the file is not JSON, so it must not fall through to text parsing.
+        if (err instanceof VoltaExtendsError) {
             throw err;
         }
         core.info('Node version file is not JSON file');
@@ -92227,7 +92231,7 @@ function resolveNodeVersionFromFile(versionFilePath, visited, context) {
         if (context.enforceVoltaExtendsWorkspaceBoundary &&
             context.workspace &&
             !isPathWithinWorkspace(extendedFilePath, context.workspace)) {
-            throw new VoltaExtendsBoundaryError(`The volta.extends target '${extendedFilePath}' resolves outside GITHUB_WORKSPACE and is not allowed`);
+            throw new NodeVersionFileBoundaryError(`The volta.extends target '${extendedFilePath}' resolves outside GITHUB_WORKSPACE and is not allowed`);
         }
         core.info('Resolving node version from ' + extendedFilePath);
         return resolveNodeVersionFromFile(extendedFilePath, visited, context);
