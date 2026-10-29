@@ -97543,13 +97543,15 @@ function markVisitedOrThrowOnCycle(versionFilePath, visited) {
     visited.add(resolvedPath);
 }
 function getNodeVersionFromFile(versionFilePath) {
-    const workspace = process.env.GITHUB_WORKSPACE;
+    // Fall back to the working directory so the boundary is still enforced if
+    // GITHUB_WORKSPACE is somehow unset, rather than silently allowing traversal.
+    const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
     // Only enforce the boundary when resolution starts inside the workspace, so
-    // existing absolute paths outside the workspace keep working.
-    const startsInsideWorkspace = !!workspace &&
-        isContainedPath(external_path_default().resolve(workspace), external_path_default().resolve(versionFilePath));
+    // existing absolute paths outside the workspace keep working. A file outside
+    // the workspace is supplied by the workflow author, not by repository
+    // content, so it is trusted and its chain is left unconstrained.
+    const startsInsideWorkspace = isContainedPath(external_path_default().resolve(workspace), external_path_default().resolve(versionFilePath));
     if (startsInsideWorkspace &&
-        workspace &&
         !isPathWithinWorkspace(versionFilePath, workspace)) {
         throw new NodeVersionFileBoundaryError(`The node-version-file '${versionFilePath}' resolves outside GITHUB_WORKSPACE and is not allowed`);
     }
@@ -97559,6 +97561,10 @@ function getNodeVersionFromFile(versionFilePath) {
     });
 }
 function resolveNodeVersionFromFile(versionFilePath, visited, context) {
+    // A file reached through volta.extends must be a manifest. Falling back to
+    // raw-text parsing for it would echo the contents of any readable file into
+    // the log (e.g. the token actions/checkout writes to .git/config).
+    const isExtendsTarget = visited.size > 0;
     if (!external_fs_default().existsSync(versionFilePath)) {
         throw new Error(`The specified node version file at: ${versionFilePath} does not exist`);
     }
@@ -97646,6 +97652,12 @@ function resolveNodeVersionFromFile(versionFilePath, visited, context) {
     }
     catch {
         core_info('Node version file is not TOML file');
+    }
+    // A volta.extends target must be a manifest. Returning the raw contents of
+    // whatever it points at would echo any readable file into the log, including
+    // the token actions/checkout writes to .git/config inside the workspace.
+    if (isExtendsTarget) {
+        throw new VoltaExtendsError(`The volta.extends target ${versionFilePath} does not declare a node version`);
     }
     const found = contents.match(/^(?:node(js)?\s+)?v?(?<version>[^\s]+)$/m);
     return found?.groups?.version ?? contents.trim();

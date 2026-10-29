@@ -314,6 +314,61 @@ describe('main tests', () => {
       ).toThrow(/volta\.extends value in .* must be a string, received number/);
     });
 
+    it('does not leak in-workspace file contents through a volta.extends hop', () => {
+      // actions/checkout writes the job token into .git/config, so the
+      // raw-contents fallback must never run for an extends target.
+      const workspace = path.resolve('/tmp/workspace');
+      const previousWorkspace = process.env['GITHUB_WORKSPACE'];
+      process.env['GITHUB_WORKSPACE'] = workspace;
+
+      mockFiles({
+        [path.join(workspace, 'package.json')]:
+          '{"volta": {"extends": "./.git/config"}}',
+        [path.join(workspace, '.git', 'config')]:
+          '[http]\n  extraheader = AUTHORIZATION: basic SECRET'
+      });
+      jest
+        .spyOn(fs, 'realpathSync')
+        .mockImplementation((p: any) => path.resolve(String(p)) as any);
+
+      try {
+        expect(() =>
+          realUtil.getNodeVersionFromFile(path.join(workspace, 'package.json'))
+        ).toThrow(/does not declare a node version/);
+      } finally {
+        process.env['GITHUB_WORKSPACE'] = previousWorkspace;
+      }
+    });
+
+    it('still enforces the boundary when GITHUB_WORKSPACE is unset', () => {
+      const previousWorkspace = process.env['GITHUB_WORKSPACE'];
+      delete process.env['GITHUB_WORKSPACE'];
+
+      const existsSpy = jest.spyOn(fs, 'existsSync');
+      existsSpy.mockImplementation(() => true);
+      jest
+        .spyOn(fs, 'realpathSync')
+        .mockImplementation((p: any) => path.resolve(String(p)) as any);
+
+      const readFileSpy = jest.spyOn(fs, 'readFileSync');
+      readFileSpy.mockImplementation((filePath: any) => {
+        if (path.basename(String(filePath)) === 'package.json') {
+          return '{"volta": {"extends": "/etc/passwd"}}' as any;
+        }
+        return 'root:x:0:0:root:/root:/bin/bash' as any;
+      });
+
+      try {
+        expect(() =>
+          realUtil.getNodeVersionFromFile(
+            path.join(process.cwd(), 'package.json')
+          )
+        ).toThrow(/resolves outside GITHUB_WORKSPACE/);
+      } finally {
+        process.env['GITHUB_WORKSPACE'] = previousWorkspace;
+      }
+    });
+
     it('rejects volta.extends paths outside workspace when the chain starts inside workspace', () => {
       const previousWorkspace = process.env['GITHUB_WORKSPACE'];
       const workspace = path.resolve('/tmp/workspace');
@@ -361,11 +416,11 @@ describe('main tests', () => {
       readFileSpy.mockImplementation((filePath: any) => {
         if (path.basename(String(filePath)) === 'a.json') {
           return JSON.stringify({
-            volta: {extends: path.join(outsideDir, '.nvmrc')}
+            volta: {extends: path.join(outsideDir, 'base.json')}
           }) as any;
         }
 
-        return 'v20.0.0' as any;
+        return '{"volta": {"node": "20.0.0"}}' as any;
       });
 
       process.env['GITHUB_WORKSPACE'] = workspace;
