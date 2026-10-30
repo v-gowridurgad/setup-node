@@ -44856,7 +44856,7 @@ function glob_hashFiles(patterns_1) {
 }
 //# sourceMappingURL=glob.js.map
 // EXTERNAL MODULE: ./node_modules/semver/index.js
-var semver = __nccwpck_require__(2088);
+var node_modules_semver = __nccwpck_require__(2088);
 ;// CONCATENATED MODULE: ./node_modules/@actions/cache/lib/internal/constants.js
 var CacheFilename;
 (function (CacheFilename) {
@@ -45022,7 +45022,7 @@ function getVersion(app_1) {
 function getCompressionMethod() {
     return cacheUtils_awaiter(this, void 0, void 0, function* () {
         const versionOutput = yield getVersion('zstd', ['--quiet']);
-        const version = semver.clean(versionOutput);
+        const version = node_modules_semver.clean(versionOutput);
         core_debug(`zstd version: ${version}`);
         if (versionOutput === '') {
             return CompressionMethod.Gzip;
@@ -92103,6 +92103,7 @@ function stringify(obj, { maxDepth = 1000, numbersAsFloat = false } = {}) {
 
 
 
+
 /** Raised when a `volta.extends` chain is cyclic or too long. */
 class VoltaExtendsError extends Error {
     constructor(message) {
@@ -92118,6 +92119,11 @@ class NodeVersionFileBoundaryError extends Error {
     }
 }
 const MAX_VOLTA_EXTENDS_HOPS = 100;
+/** Aliases a node version file may contain that are not semver ranges. */
+const NODE_VERSION_ALIASES = /^(?:lts\/\*|lts\/[\w.-]+|node|latest|current|stable|\*)$/i;
+function isNodeVersionSpec(value) {
+    return NODE_VERSION_ALIASES.test(value) || semver.validRange(value) !== null;
+}
 function isContainedPath(parentPath, childPath) {
     const relativePath = path.relative(parentPath, childPath);
     return (relativePath !== '..' &&
@@ -92258,14 +92264,15 @@ function resolveNodeVersionFromFile(versionFilePath, visited, context) {
     catch {
         core.info('Node version file is not TOML file');
     }
-    // A volta.extends target must be a manifest. Returning the raw contents of
-    // whatever it points at would echo any readable file into the log, including
+    const found = contents.match(/^(?:node(js)?\s+)?v?(?<version>[^\s]+)$/m);
+    const version = found?.groups?.version ?? contents.trim();
+    // A volta.extends target must declare a node version. Returning arbitrary
+    // text would echo the contents of any readable file into the log, including
     // the token actions/checkout writes to .git/config inside the workspace.
-    if (isExtendsTarget) {
+    if (isExtendsTarget && !isNodeVersionSpec(version)) {
         throw new VoltaExtendsError(`The volta.extends target ${versionFilePath} does not declare a node version`);
     }
-    const found = contents.match(/^(?:node(js)?\s+)?v?(?<version>[^\s]+)$/m);
-    return found?.groups?.version ?? contents.trim();
+    return version;
 }
 async function printEnvDetailsAndSetOutput() {
     core.startGroup('Environment details');

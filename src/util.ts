@@ -2,6 +2,7 @@ import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as io from '@actions/io';
 import {parse} from 'smol-toml';
+import semver from 'semver';
 
 import fs from 'fs';
 import path from 'path';
@@ -23,6 +24,14 @@ export class NodeVersionFileBoundaryError extends Error {
 }
 
 const MAX_VOLTA_EXTENDS_HOPS = 100;
+
+/** Aliases a node version file may contain that are not semver ranges. */
+const NODE_VERSION_ALIASES =
+  /^(?:lts\/\*|lts\/[\w.-]+|node|latest|current|stable|\*)$/i;
+
+function isNodeVersionSpec(value: string): boolean {
+  return NODE_VERSION_ALIASES.test(value) || semver.validRange(value) !== null;
+}
 
 interface NodeVersionFileResolutionContext {
   enforceVoltaExtendsWorkspaceBoundary: boolean;
@@ -232,17 +241,19 @@ function resolveNodeVersionFromFile(
     core.info('Node version file is not TOML file');
   }
 
-  // A volta.extends target must be a manifest. Returning the raw contents of
-  // whatever it points at would echo any readable file into the log, including
+  const found = contents.match(/^(?:node(js)?\s+)?v?(?<version>[^\s]+)$/m);
+  const version = found?.groups?.version ?? contents.trim();
+
+  // A volta.extends target must declare a node version. Returning arbitrary
+  // text would echo the contents of any readable file into the log, including
   // the token actions/checkout writes to .git/config inside the workspace.
-  if (isExtendsTarget) {
+  if (isExtendsTarget && !isNodeVersionSpec(version)) {
     throw new VoltaExtendsError(
       `The volta.extends target ${versionFilePath} does not declare a node version`
     );
   }
 
-  const found = contents.match(/^(?:node(js)?\s+)?v?(?<version>[^\s]+)$/m);
-  return found?.groups?.version ?? contents.trim();
+  return version;
 }
 
 export async function printEnvDetailsAndSetOutput() {

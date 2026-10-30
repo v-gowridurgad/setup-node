@@ -340,6 +340,32 @@ describe('main tests', () => {
       }
     });
 
+    it.each(['24', 'v20.1.0', '20.x', 'lts/*', 'lts/hydrogen'])(
+      'resolves a volta.extends target holding the plain version %s',
+      version => {
+        const workspace = path.resolve('/tmp/workspace');
+        const previousWorkspace = process.env['GITHUB_WORKSPACE'];
+        process.env['GITHUB_WORKSPACE'] = workspace;
+
+        mockFiles({
+          [path.join(workspace, 'b.json')]:
+            '{"volta": {"extends": "./.nvmrc"}}',
+          [path.join(workspace, '.nvmrc')]: version
+        });
+        jest
+          .spyOn(fs, 'realpathSync')
+          .mockImplementation((p: any) => path.resolve(String(p)) as any);
+
+        try {
+          expect(
+            realUtil.getNodeVersionFromFile(path.join(workspace, 'b.json'))
+          ).toBe(version.replace(/^v/, ''));
+        } finally {
+          process.env['GITHUB_WORKSPACE'] = previousWorkspace;
+        }
+      }
+    );
+
     it('still enforces the boundary when GITHUB_WORKSPACE is unset', () => {
       const previousWorkspace = process.env['GITHUB_WORKSPACE'];
       delete process.env['GITHUB_WORKSPACE'];
