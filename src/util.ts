@@ -26,7 +26,7 @@ const MAX_VOLTA_EXTENDS_HOPS = 100;
 
 interface NodeVersionFileResolutionContext {
   enforceVoltaExtendsWorkspaceBoundary: boolean;
-  workspace?: string;
+  workspace: string;
 }
 
 function isContainedPath(parentPath: string, childPath: string): boolean {
@@ -201,7 +201,6 @@ function resolveNodeVersionFromFile(
   if (extendedFilePath !== null) {
     if (
       context.enforceVoltaExtendsWorkspaceBoundary &&
-      context.workspace &&
       !isPathWithinWorkspace(extendedFilePath, context.workspace)
     ) {
       throw new NodeVersionFileBoundaryError(

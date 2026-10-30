@@ -97629,7 +97629,6 @@ function resolveNodeVersionFromFile(versionFilePath, visited, context) {
     }
     if (extendedFilePath !== null) {
         if (context.enforceVoltaExtendsWorkspaceBoundary &&
-            context.workspace &&
             !isPathWithinWorkspace(extendedFilePath, context.workspace)) {
             throw new NodeVersionFileBoundaryError(`The volta.extends target '${extendedFilePath}' resolves outside GITHUB_WORKSPACE and is not allowed`);
         }
