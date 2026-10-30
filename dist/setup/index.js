@@ -97515,8 +97515,15 @@ class NodeVersionFileBoundaryError extends Error {
 const MAX_VOLTA_EXTENDS_HOPS = 100;
 /** Aliases a node version file may contain that are not semver ranges. */
 const NODE_VERSION_ALIASES = /^(?:lts\/\*|lts\/[\w.-]+|node|latest|current|stable|\*)$/i;
+/**
+ * Partial-version prerelease selectors such as `16-nightly` or `19-v8-canary`.
+ * These route to the nightly/canary/rc installers but are not valid semver.
+ */
+const NODE_PRERELEASE_SELECTOR = /^v?\d+(?:\.\d+){0,2}-(?:nightly|v8-canary|rc)[\w.-]*$/i;
 function isNodeVersionSpec(value) {
-    return NODE_VERSION_ALIASES.test(value) || semver_default().validRange(value) !== null;
+    return (NODE_VERSION_ALIASES.test(value) ||
+        NODE_PRERELEASE_SELECTOR.test(value) ||
+        semver_default().validRange(value) !== null);
 }
 function isContainedPath(parentPath, childPath) {
     const relativePath = external_path_default().relative(parentPath, childPath);

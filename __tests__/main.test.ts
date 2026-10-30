@@ -340,7 +340,18 @@ describe('main tests', () => {
       }
     });
 
-    it.each(['24', 'v20.1.0', '20.x', 'lts/*', 'lts/hydrogen'])(
+    it.each([
+      '24',
+      'v20.1.0',
+      '20.x',
+      'lts/*',
+      'lts/hydrogen',
+      '16-nightly',
+      '19-v8-canary',
+      '17.5.0-nightly',
+      '24.1-rc',
+      '20.0.0-v8-canary20221022e83bcb6c41'
+    ])(
       'resolves a volta.extends target holding the plain version %s',
       version => {
         const workspace = path.resolve('/tmp/workspace');
