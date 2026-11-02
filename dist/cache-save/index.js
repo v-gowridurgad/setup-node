@@ -92218,9 +92218,12 @@ function resolveNodeVersionFromFile(versionFilePath, visited, context) {
             }
             // Support Volta workspaces.
             // See https://docs.volta.sh/advanced/workspaces
-            if (manifest.volta?.extends) {
-                if (typeof manifest.volta.extends !== 'string') {
-                    throw new VoltaExtendsError(`The volta.extends value in ${versionFilePath} must be a string, received ${typeof manifest.volta.extends}`);
+            // Checked for presence rather than truthiness so that invalid values
+            // such as null or false are reported instead of silently ignored.
+            if (manifest.volta?.extends !== undefined) {
+                if (typeof manifest.volta.extends !== 'string' ||
+                    manifest.volta.extends.trim() === '') {
+                    throw new VoltaExtendsError(`The volta.extends value in ${versionFilePath} must be a non-empty string, received ${JSON.stringify(manifest.volta.extends)}`);
                 }
                 extendedFilePath = path.resolve(path.dirname(versionFilePath), manifest.volta.extends);
             }

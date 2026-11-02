@@ -302,16 +302,28 @@ describe('main tests', () => {
       );
     });
 
-    it('rejects a non-string volta.extends instead of returning the raw file contents', () => {
-      // Otherwise path.resolve throws a TypeError that is swallowed as "not
-      // JSON", and the fallback returns the whole package.json as a version.
+    it.each(['42', 'null', 'false', 'true', '""', '"   "', '{}', '[]'])(
+      'rejects the invalid volta.extends value %s instead of skipping validation',
+      raw => {
+        // Otherwise path.resolve throws a TypeError that is swallowed as "not
+        // JSON", and the fallback returns the whole package.json as a version.
+        // Falsy values must not silently bypass the check either.
+        mockFiles({
+          '/tmp/d/package.json': `{"volta": {"extends": ${raw}}}`
+        });
+
+        expect(() =>
+          realUtil.getNodeVersionFromFile('/tmp/d/package.json')
+        ).toThrow(/volta\.extends value in .* must be a non-empty string/);
+      }
+    );
+
+    it('still returns null when volta has no extends key at all', () => {
       mockFiles({
-        '/tmp/d/package.json': '{"volta": {"extends": 42}}'
+        '/tmp/d/package.json': '{"volta": {}}'
       });
 
-      expect(() =>
-        realUtil.getNodeVersionFromFile('/tmp/d/package.json')
-      ).toThrow(/volta\.extends value in .* must be a string, received number/);
+      expect(realUtil.getNodeVersionFromFile('/tmp/d/package.json')).toBeNull();
     });
 
     it('does not leak in-workspace file contents through a volta.extends hop', () => {
