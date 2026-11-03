@@ -2,6 +2,7 @@ import * as core from '@actions/core';
 import * as tc from '@actions/tool-cache';
 import path from 'path';
 import * as exec from '@actions/exec';
+import semver from 'semver';
 
 import BaseDistribution from '../base-distribution.js';
 import {NodeInputs, INodeVersion, INodeVersionInfo} from '../base-models.js';
@@ -177,7 +178,16 @@ export default class OfficialBuilds extends BaseDistribution {
 
     if (this.isLatestSyntax(this.nodeInfo.versionSpec)) {
       core.info(`getting latest node version...`);
-      return versions[0];
+
+      // `versions` is sorted newest-first and includes prereleases, so the
+      // head can be an alpha/nightly build. nodejs.org treats the `latest`
+      // alias as the newest Current release, which is never a prerelease,
+      // so skip prereleases unless nothing else is available.
+      const stableVersion = versions.find(
+        potential => semver.prerelease(potential) === null
+      );
+
+      return stableVersion ?? versions[0];
     }
 
     version = super.evaluateVersions(versions);
