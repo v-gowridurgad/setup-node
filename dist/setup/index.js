@@ -98988,6 +98988,7 @@ class NightlyNodejs extends BasePrereleaseNodejs {
 
 
 
+
 class OfficialBuilds extends BaseDistribution {
     constructor(nodeInfo) {
         super(nodeInfo);
@@ -99097,7 +99098,12 @@ class OfficialBuilds extends BaseDistribution {
         let version = '';
         if (this.isLatestSyntax(this.nodeInfo.versionSpec)) {
             core_info(`getting latest node version...`);
-            return versions[0];
+            // `versions` is sorted newest-first and includes prereleases, so the
+            // head can be an alpha/nightly build. nodejs.org treats the `latest`
+            // alias as the newest Current release, which is never a prerelease,
+            // so skip prereleases unless nothing else is available.
+            const stableVersion = versions.find(potential => semver_default().prerelease(potential) === null);
+            return stableVersion ?? versions[0];
         }
         version = super.evaluateVersions(versions);
         return version;
