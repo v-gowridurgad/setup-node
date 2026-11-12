@@ -99115,7 +99115,6 @@ class OfficialBuilds extends BaseDistribution {
         let version = '';
         if (this.isLatestSyntax(this.nodeInfo.versionSpec)) {
             core_info(`getting latest node version...`);
-            // Match nodejs.org's latest, which never points to a prerelease (e.g. an alpha).
             const stableVersion = versions.find(potential => semver_default().prerelease(potential) === null);
             if (!stableVersion) {
                 throw new Error(`Unable to find a stable Node version for '${this.nodeInfo.versionSpec}' on platform ${this.osPlat} and architecture ${this.nodeInfo.arch}.`);
