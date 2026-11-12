@@ -3,8 +3,6 @@ import path from 'node:path';
 import * as core from '@actions/core';
 import * as exec from '@actions/exec';
 import * as tc from '@actions/tool-cache';
-import path from 'path';
-import * as exec from '@actions/exec';
 import semver from 'semver';
 
 import BaseDistribution from '../base-distribution.js';
@@ -199,6 +197,7 @@ export default class OfficialBuilds extends BaseDistribution {
     if (this.isLatestSyntax(this.nodeInfo.versionSpec)) {
       core.info(`getting latest node version...`);
 
+      // Match nodejs.org's latest, which never points to a prerelease (e.g. an alpha).
       const stableVersion = versions.find(
         potential => semver.prerelease(potential) === null
       );
