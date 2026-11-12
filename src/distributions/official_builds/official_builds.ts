@@ -179,10 +179,8 @@ export default class OfficialBuilds extends BaseDistribution {
     if (this.isLatestSyntax(this.nodeInfo.versionSpec)) {
       core.info(`getting latest node version...`);
 
-      // `versions` is sorted newest-first and includes prereleases, so the
-      // head can be an alpha/nightly build. nodejs.org treats the `latest`
-      // alias as the newest Current release, which is never a prerelease,
-      // so skip prereleases unless nothing else is available.
+      // Match nodejs.org's `latest`: skip prereleases (e.g. alphas)
+      // unless no stable version exists.
       const stableVersion = versions.find(
         potential => semver.prerelease(potential) === null
       );
