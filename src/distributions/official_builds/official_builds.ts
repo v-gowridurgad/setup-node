@@ -179,13 +179,17 @@ export default class OfficialBuilds extends BaseDistribution {
     if (this.isLatestSyntax(this.nodeInfo.versionSpec)) {
       core.info(`getting latest node version...`);
 
-      // Match nodejs.org's `latest`: skip prereleases (e.g. alphas)
-      // unless no stable version exists.
       const stableVersion = versions.find(
         potential => semver.prerelease(potential) === null
       );
 
-      return stableVersion ?? versions[0];
+      if (!stableVersion) {
+        throw new Error(
+          `Unable to find a stable Node version for '${this.nodeInfo.versionSpec}' on platform ${this.osPlat} and architecture ${this.nodeInfo.arch}.`
+        );
+      }
+
+      return stableVersion;
     }
 
     version = super.evaluateVersions(versions);

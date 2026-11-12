@@ -99098,12 +99098,11 @@ class OfficialBuilds extends BaseDistribution {
         let version = '';
         if (this.isLatestSyntax(this.nodeInfo.versionSpec)) {
             core_info(`getting latest node version...`);
-            // `versions` is sorted newest-first and includes prereleases, so the
-            // head can be an alpha/nightly build. nodejs.org treats the `latest`
-            // alias as the newest Current release, which is never a prerelease,
-            // so skip prereleases unless nothing else is available.
             const stableVersion = versions.find(potential => semver_default().prerelease(potential) === null);
-            return stableVersion ?? versions[0];
+            if (!stableVersion) {
+                throw new Error(`Unable to find a stable Node version for '${this.nodeInfo.versionSpec}' on platform ${this.osPlat} and architecture ${this.nodeInfo.arch}.`);
+            }
+            return stableVersion;
         }
         version = super.evaluateVersions(versions);
         return version;
