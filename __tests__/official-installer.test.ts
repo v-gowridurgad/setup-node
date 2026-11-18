@@ -479,6 +479,49 @@ describe('setup-node', () => {
     expect(addPathSpy).toHaveBeenCalledWith(expPath);
   });
 
+  it('uses GitHub token for manifest and manifest-based downloads when mirror is set', async () => {
+    os.platform = 'linux';
+    os.arch = 'x64';
+
+    const versionSpec = '12.16.2';
+    const githubToken = 'github-token';
+    const mirrorToken = 'mirror-token-secret';
+    const expectedUrl =
+      'https://github.com/actions/node-versions/releases/download/12.16.2-20200507.95/node-12.16.2-linux-x64.tar.gz';
+
+    inputs['node-version'] = versionSpec;
+    inputs['token'] = githubToken;
+    inputs['mirror'] = 'https://my_mirror_url';
+    inputs['mirror-token'] = mirrorToken;
+
+    findSpy.mockImplementation(() => '');
+
+    dlSpy.mockImplementation(async () => '/some/temp/path');
+    const toolPath = path.normalize('/cache/node/12.16.2/x64');
+    exSpy.mockImplementation(async () => '/some/other/temp/path');
+    cacheSpy.mockImplementation(async () => toolPath);
+    getExecOutputSpy.mockImplementation(async () => ({
+      stdout: 'v12.16.2\n',
+      stderr: '',
+      exitCode: 0
+    }));
+
+    await main.run();
+
+    expect(getManifestSpy).toHaveBeenCalledWith(
+      'actions',
+      'node-versions',
+      `token ${githubToken}`,
+      'main'
+    );
+    expect(dlSpy).toHaveBeenCalledWith(
+      expectedUrl,
+      undefined,
+      `token ${githubToken}`
+    );
+    expect(dlSpy).not.toHaveBeenCalledWith(expectedUrl, undefined, mirrorToken);
+  });
+
   it('falls back to a version from node dist', async () => {
     os.platform = 'linux';
     os.arch = 'x64';
@@ -1056,6 +1099,7 @@ describe('setup-node', () => {
 
       await main.run();
       expect(dlSpy).toHaveBeenCalled();
+      expect(dlSpy).toHaveBeenCalledWith(expectedUrl, undefined, 'faketoken');
       expect(logSpy).toHaveBeenCalledWith(
         `Acquiring ${version} - ${arch} from ${expectedUrl}`
       );
